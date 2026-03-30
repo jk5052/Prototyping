@@ -39,16 +39,24 @@ app.post('/api/narrate', async (req, res) => {
   }
 });
 
-// Journal prompt from card types
+// Journal prompt (LLM-generated based on player's choices)
 app.post('/api/journal-prompt', async (req, res) => {
-  const { cards } = req.body;
-  const counts = {};
-  cards.forEach(c => { counts[c.type] = (counts[c.type] || 0) + 1; });
-  const dominant = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Emotion';
-  const category = PROMPTS.CARD_TO_CATEGORY[dominant] || 'emotion';
-  const pool = PROMPTS.JOURNAL_QUESTIONS[category];
-  const question = pool[Math.floor(Math.random() * pool.length)];
-  res.json({ question, category });
+  const { sessionData } = req.body;
+  const sessionContext = buildSessionContext(sessionData);
+  const system = PROMPTS.JOURNAL_PROMPT.replace('{{ SESSION_DATA }}', sessionContext);
+  try {
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 80,
+      system,
+      messages: [{ role: 'user', content: 'Generate the journal prompt for this player.' }],
+    });
+    const question = response.content[0].text.trim();
+    res.json({ question });
+  } catch (err) {
+    const fb = PROMPTS.JOURNAL_FALLBACKS;
+    res.json({ question: fb[Math.floor(Math.random() * fb.length)] });
+  }
 });
 
 // Boundary conversation

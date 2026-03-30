@@ -260,7 +260,7 @@ const Game = {
       const res = await fetch('/api/journal-prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cards: session.cards }),
+        body: JSON.stringify({ sessionData: this.getSessionData() }),
       });
       const data = await res.json();
       document.getElementById('journal-prompt').textContent = data.question;

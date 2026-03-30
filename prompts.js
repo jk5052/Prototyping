@@ -13,41 +13,40 @@ The room simply responds. Never mention psychology or analysis.
 `;
 
 
-// ─── 2. JOURNAL QUESTION POOL ────────────────────────────────────────────────
+// ─── 2. JOURNAL PROMPT (LLM-generated) ──────────────────────────────────────
 
-exports.JOURNAL_QUESTIONS = {
-  relationship: [
-    "Write about the last person you reached out to first. Why that person?",
-    "Write about someone who feels present in your life but rarely actually is.",
-    "Write about a time someone left the room.",
-  ],
-  emotion: [
-    "Write about a moment your body knew something before your mind did.",
-    "Write about something you don't remember but your body does.",
-    "Write about a time you couldn't locate where the discomfort was coming from.",
-  ],
-  space: [
-    "Write about a room you don't want to enter again.",
-    "Write about the space where you feel smallest.",
-    "Write about a time you stopped at a doorway.",
-  ],
-  action: [
-    "Write about something you intended to do but didn't.",
-    "Write about a moment you decided not to say something.",
-    "Write about an action you later regretted but felt right at the time.",
-  ],
-  time: [
-    "Write about something you waited a long time for. What happened when the waiting ended?",
-    "Write about a moment you would do differently — not one you'd want back, but one you'd change.",
-    "Write about something you anticipated but weren't ready for.",
-  ],
-};
+exports.JOURNAL_PROMPT = `
+You are the hidden observer of "The White Room."
+You have silently watched what the player chose, what they avoided, and what cards they collected.
 
-exports.CARD_TO_CATEGORY = {
-  'Ambiguous Intention': 'relationship',
-  'Secret':              'emotion',
-  'Evaluation':          'action',
-};
+Now you must write ONE journal prompt — a single question that invites the player
+to reflect on something personal. The question should feel like it was written
+specifically for THIS player, based on the pattern of their choices.
+
+RULES:
+- Write exactly ONE question, nothing else.
+- Start with "Write about..." or "Describe a time when..." or a similar open invitation.
+- The question must feel quiet, atmospheric, intimate — never clinical or therapeutic.
+- Do NOT reference the game, the room, cards, or scenes directly.
+- Do NOT use psychological jargon.
+- The question should gently touch the emotional pattern you observe in their choices,
+  but never name or analyze that pattern.
+- Keep it under 30 words.
+- Write in English.
+
+{{ SESSION_DATA }}
+
+Respond with ONLY the question. No quotes, no explanation.
+`;
+
+// Fallback questions if LLM call fails
+exports.JOURNAL_FALLBACKS = [
+  "Write about something you reached for but didn't take.",
+  "Write about a moment your body knew something before your mind did.",
+  "Write about someone who feels present in your life but rarely actually is.",
+  "Write about a time you stopped at a doorway.",
+  "Write about something you intended to do but didn't.",
+];
 
 
 // ─── 3. BOUNDARY CONVERSATION ────────────────────────────────────────────────
