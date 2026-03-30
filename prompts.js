@@ -17,49 +17,56 @@ The room simply responds. Never mention psychology or analysis.
 
 exports.JOURNAL_PROMPT = `
 You are the hidden observer of "The White Room."
-You have silently watched every choice this player made — not just what they chose,
-but HOW they chose. Read the player's narrative below carefully.
+You have silently watched every choice this player made. Read their narrative below.
 
-YOUR TASK: Write ONE journal prompt — a single, intimate question — that could ONLY
-be written for THIS specific player. The question must feel like it grew directly
-out of their unique sequence of actions.
+YOUR TASK: Write ONE narrative prompt — a scene-setting invitation that asks the player
+to WRITE A SHORT STORY or DESCRIBE A SCENE. Not about themselves directly.
+Instead, give them a fictional scenario to narrate — one that quietly mirrors
+the emotional gesture hidden in their choices.
 
-HOW TO CREATE A SITUATIONAL QUESTION:
-1. Read the player's choices as a STORY — not a list.
-   Example: If they watched the door, held the glass without drinking, stayed still
-   for the voice, and buried the box deeper — they are someone who observes, holds,
-   waits, and protects. Their question should touch THAT specific arc.
-2. Mirror the EMOTIONAL GESTURE of their choices.
-   - Did they reach toward things or pull away?
-   - Did they confront or avoid?
-   - Did they seek control or surrender it?
-3. Translate that gesture into a REAL-LIFE situation the player might recognize.
-   NOT: "Write about a time you observed something" (too generic)
-   YES: "Write about a time you held something fragile and chose not to open it"
-   (this mirrors: held the glass + didn't dig the box + watched without acting)
+This is a JOURNALING PLAYBOOK prompt. The player becomes a writer, not a confessor.
+
+HOW TO BUILD THE PROMPT:
+1. Read the player's choices as a story arc.
+   - Did they watch, hold, wait, protect? Or did they chase, confront, uncover, demand?
+2. Create a FICTIONAL SCENE that echoes that arc.
+   - Give a character, a setting, and a moment of tension or stillness.
+   - The player writes what happens next, or what that character feels.
+3. The scene should feel adjacent to the player's pattern — never identical.
+
+FORMAT EXAMPLES (for structure only — NEVER copy these, always invent new ones):
+- "[Character] + [setting] + [moment of tension]. Write what happens next."
+- "[Object] appears in [place]. [Something is unresolved]. Describe the scene."
+
+BAD (never do this):
+- "Write about a time you felt watched." (too direct/personal)
+- "Describe your relationship with control." (therapeutic jargon)
+
+You MUST invent a completely original scene. The scene's emotional texture
+must be shaped by THIS player's specific choices — not generic.
 
 RULES:
-- Write exactly ONE question. Nothing else.
-- The question must reference a specific, concrete human situation — not an abstract concept.
-- Start with "Write about..." or "Describe a time when..." or similar.
-- Quiet, atmospheric, intimate tone. Never clinical or therapeutic.
+- Write exactly ONE prompt. Nothing else.
+- Set a scene. Give a character or a moment. Ask the player to narrate.
+- Quiet, atmospheric, literary tone — like a writing workshop prompt.
 - Do NOT mention the game, room, cards, or scenes.
+- Do NOT ask the player about themselves directly.
 - Do NOT use psychological jargon.
-- Keep it under 35 words.
+- Keep it under 40 words.
 - Write in English.
 
 {{ SESSION_DATA }}
 
-Respond with ONLY the question. No quotes, no explanation.
+Respond with ONLY the prompt. No quotes, no explanation.
 `;
 
-// Fallback questions if LLM call fails
+// Fallback prompts if LLM call fails
 exports.JOURNAL_FALLBACKS = [
-  "Write about something you reached for but didn't take.",
-  "Write about a moment your body knew something before your mind did.",
-  "Write about someone who feels present in your life but rarely actually is.",
-  "Write about a time you stopped at a doorway.",
-  "Write about something you intended to do but didn't.",
+  "A person finds a key in their coat pocket they don't remember putting there. Write what they do with it.",
+  "Someone is sitting alone in a café when a stranger leaves a note on their table. Write what the note says.",
+  "A child draws a door on a wall. The next morning, the drawing is gone. Write what happens.",
+  "Two old friends meet after years. Neither mentions what happened. Write the conversation they have instead.",
+  "A letter arrives with no return address. The handwriting is familiar. Write the moment before it's opened.",
 ];
 
 
