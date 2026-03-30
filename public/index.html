@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The White Room</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ── PHASE 0: START ─────────────────────────────── -->
+  <div id="phase-start" class="phase active">
+    <div class="eyebrow">Session 001</div>
+    <h1 class="title">The White<br><em>Room</em></h1>
+    <p class="lead">The moment you enter,<br/>something begins to observe you.</p>
+    <button class="btn" onclick="Game.start()">Enter the room</button>
+  </div>
+
+  <!-- ── PHASE 1: ROOM (scene-based narrative) ─────── -->
+  <div id="phase-room" class="phase">
+    <div class="room-label" id="room-label"></div>
+
+    <div id="scene-content" style="width:100%; display:flex; flex-direction:column; gap:1.5rem;">
+      <div id="scene-narrative" class="scene-narrative"></div>
+      <div id="card-notification" class="card-notification" style="display:none;"></div>
+      <div id="scene-question" class="scene-question"></div>
+      <div id="scene-choices" class="scene-choices"></div>
+    </div>
+
+    <!-- Cards tray — always visible at bottom -->
+    <div id="cards-tray" class="cards-tray">
+      <div class="tray-label">Cards collected</div>
+      <div id="cards-list" class="cards-list"></div>
+    </div>
+  </div>
+
+  <!-- ── PHASE 2: DOOR (journaling) ─────────────────── -->
+  <div id="phase-door" class="phase">
+    <div class="eyebrow">At the door</div>
+    <div class="door-cards" id="door-cards"></div>
+    <div class="journal-prompt" id="journal-prompt"></div>
+    <textarea id="journal-input" class="journal-input" placeholder="Write here..." rows="6"></textarea>
+    <div id="journal-count" class="journal-count">0 characters</div>
+    <button class="btn" onclick="Game.submitJournal()">Continue →</button>
+  </div>
+
+  <!-- ── PHASE 3: BOUNDARY (conversation) ───────────── -->
+  <div id="phase-boundary" class="phase">
+    <div class="eyebrow">The Boundary</div>
+    <p class="lead" style="font-size:0.85rem;">The rooms are behind you.<br/>Something speaks.</p>
+    <div id="conversation-log" class="conversation-log"></div>
+    <div id="conv-input-row" class="conv-input-row">
+      <textarea id="conv-input" class="conv-input" placeholder="Respond..." rows="2"></textarea>
+      <button class="btn-send" onclick="Game.sendMessage()">↑</button>
+    </div>
+    <button id="reveal-btn" class="btn btn-token" onclick="Game.revealCharacter()" style="display:none;">
+      See who walked through this room →
+    </button>
+  </div>
+
+  <!-- ── PHASE 4: CHARACTER REVEAL ──────────────────── -->
+  <div id="phase-character" class="phase">
+    <div class="eyebrow">The one who walked through</div>
+    <div id="archetype-name" class="archetype-name"></div>
+    <div id="archetype-desc" class="archetype-desc"></div>
+    <div id="archetype-sig" class="archetype-sig"></div>
+    <button class="btn" style="margin-top:1rem;" onclick="Game.goToFinalMessage()">
+      One last thing →
+    </button>
+  </div>
+
+  <!-- ── PHASE 5: FINAL MESSAGE ─────────────────────── -->
+  <div id="phase-message" class="phase">
+    <div class="eyebrow">Before you leave</div>
+    <div id="situation-text" class="situation-text"></div>
+    <p class="lead" style="font-size:0.82rem;">What would you say to them?</p>
+    <textarea id="message-input" class="journal-input" placeholder="Write here..." rows="5"></textarea>
+    <div id="message-count" class="journal-count">0 characters</div>
+    <button class="btn" onclick="Game.generateToken()">Send →</button>
+  </div>
+
+  <!-- ── PHASE 6: TOKEN ─────────────────────────────── -->
+  <div id="phase-token" class="phase">
+    <div class="eyebrow">Your token</div>
+    <div id="token-card" class="token-card">
+      <div id="token-archetype" class="token-card-archetype"></div>
+      <div id="token-words" class="token-words"></div>
+      <div id="token-message-display" class="token-message-display"></div>
+      <div id="token-to" class="token-to"></div>
+    </div>
+    <p class="lead" style="font-size:0.78rem; margin-top:1.5rem;">
+      This token will find its way to someone who needs it.
+    </p>
+    <button class="btn" onclick="location.reload()">Return to the beginning</button>
+  </div>
+
+</div>
+<div class="heartbeat-overlay"></div>
+<script src="script.js"></script>
+</body>
+</html>
