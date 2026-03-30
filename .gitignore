@@ -6,3 +6,6 @@
 # Dependencies
 node_modules/
 
+# Token pool (runtime data)
+token-pool.json
+
