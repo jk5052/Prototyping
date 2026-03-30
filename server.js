@@ -173,15 +173,32 @@ app.get('/api/pool/all', (_req, res) => {
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 function buildSessionContext(sessionData) {
-  return `
-Objects touched: ${sessionData.objects.map(o => `${o.name} (${o.cardType})`).join(', ')}
-Objects ignored: ${sessionData.ignored?.join(', ') || 'none'}
-Cards: ${sessionData.cards.map(c => `[${c.type}] ${c.name}`).join(', ')}
+  // Build scene-by-scene narrative of player's choices
+  const sceneDescriptions = {
+    'S-01': 'An open door watches you from across the room.',
+    'S-02': 'A glass of water appears, offered without being asked.',
+    'S-03': 'A familiar voice calls from behind the wall.',
+    'S-04': 'A small box is buried in the place you always return to.',
+    'S-05': 'A mirror with two faces appears while someone measures you.',
+    'S-06': 'You make a familiar gesture while someone writes it down.',
+  };
 
-Journal entries:
+  const choiceNarrative = (sessionData.choices || []).map(c => {
+    const scene = sceneDescriptions[c.sceneId] || c.sceneId;
+    return `Scene: ${scene}\n  → Player chose: "${c.choiceText}"`;
+  }).join('\n');
+
+  return `
+═══ PLAYER'S UNIQUE NARRATIVE ═══
+${choiceNarrative || 'No choices recorded.'}
+
+═══ CARDS COLLECTED ═══
+${sessionData.cards.map(c => `[${c.type}] ${c.name}`).join(', ') || 'None'}
+
+═══ JOURNAL ENTRIES ═══
 ${sessionData.journals.map((j, i) =>
   `Entry ${i + 1}\nPrompt: "${j.prompt}"\nResponse: "${j.text}"`
-).join('\n\n')}
+).join('\n\n') || 'None yet.'}
 `;
 }
 
