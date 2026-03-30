@@ -8,74 +8,74 @@ const ROOM1 = {
   scenes: [
     {
       id: 'S-01',
-      narrative: 'You enter a white room. One table, one chair, one mirror. The door closes behind you. It is not locked. Somewhere, a heartbeat.',
-      question: 'What do you do first?',
+      narrative: 'You enter a white room. One table, one chair, one mirror. The door behind you is not locked — it stays slightly open. Somewhere, a heartbeat.',
+      question: 'Someone watches a door left open, from across the room. What do you do?',
       choices: [
-        { key: 'A', text: 'Try the door. Check if you can leave.',         card: null },
-        { key: 'B', text: 'Look in the mirror.',                            card: { type: 'Emotion',      name: 'Reflection' } },
-        { key: 'C', text: 'Sit in the chair. Wait.',                        card: { type: 'Memory',       name: 'Waiting' } },
-        { key: 'D', text: 'Examine the table. See what\'s on it.',          card: null },
-        { key: 'E', text: 'Walk the perimeter. Touch the walls.',           card: { type: 'Object',       name: 'The boundary' } },
+        { key: 'A', text: 'Close the door.',                                card: null },
+        { key: 'B', text: 'Watch the door back. See if anything moves.',    card: { type: 'Ambiguous Intention', name: 'The open door' } },
+        { key: 'C', text: 'Sit in the chair. Ignore the door.',             card: null },
+        { key: 'D', text: 'Walk toward the door slowly.',                   card: { type: 'Ambiguous Intention', name: 'The open door' } },
+        { key: 'E', text: 'Look for who\'s watching.',                      card: { type: 'Ambiguous Intention', name: 'The open door' } },
       ],
     },
     {
       id: 'S-02',
-      narrative: 'There is an envelope on the table. Your name is written on the front. You don\'t recognize the handwriting.',
-      question: 'What do you do?',
+      narrative: 'A glass of water sits on the table. You didn\'t ask for it. You don\'t know who placed it there. The surface is still.',
+      question: 'A glass of water is offered, without being asked. What do you do?',
       choices: [
-        { key: 'A', text: 'Open it immediately.',                           card: null },
-        { key: 'B', text: 'Turn it over. Smell it. Feel the weight. Then open it.', card: { type: 'Emotion', name: 'The body first' } },
-        { key: 'C', text: 'Don\'t open it. Put it in your pocket.',         card: { type: 'Memory',       name: 'The unopened thing' } },
-        { key: 'D', text: 'Open it just enough to read the first line.',    card: null },
-        { key: 'E', text: 'Try to figure out who sent it before opening.',  card: { type: 'Object',       name: 'The unanswered question' } },
+        { key: 'A', text: 'Drink it without thinking.',                     card: null },
+        { key: 'B', text: 'Hold the glass. Feel its temperature.',          card: { type: 'Ambiguous Intention', name: 'The offered water' } },
+        { key: 'C', text: 'Leave it. You didn\'t ask for this.',            card: null },
+        { key: 'D', text: 'Look around for who offered it.',                card: { type: 'Ambiguous Intention', name: 'The offered water' } },
+        { key: 'E', text: 'Pour it out slowly.',                            card: { type: 'Ambiguous Intention', name: 'The offered water' } },
       ],
     },
     {
       id: 'S-03',
-      narrative: 'You pass the corridor. Through a half-open door, two people are talking. One says: "...they probably don\'t know." The other replies: "I think that\'s me."',
-      question: 'What is this conversation about?',
+      narrative: 'From somewhere behind the wall, a voice calls. It sounds familiar — someone you know, or someone you once knew. You can\'t place it.',
+      question: 'A familiar voice calls, and someone follows without knowing why. What do you do?',
       choices: [
-        { key: 'A', text: 'Me. They\'re talking about something I don\'t know.',   card: { type: 'Emotion',      name: 'The one being talked about' } },
-        { key: 'B', text: 'Someone else. This has nothing to do with me.',          card: null },
-        { key: 'C', text: 'They\'re protecting someone. There\'s goodwill here.',   card: { type: 'Relationship', name: 'The protector' } },
-        { key: 'D', text: 'I can\'t tell. Not enough information.',                 card: null },
-        { key: 'E', text: 'I shouldn\'t have heard this. I keep walking.',          card: { type: 'Memory',       name: 'The overheard thing' } },
+        { key: 'A', text: 'Follow the voice.',                              card: { type: 'Ambiguous Intention', name: 'The familiar voice' } },
+        { key: 'B', text: 'Call back. Ask who it is.',                       card: { type: 'Ambiguous Intention', name: 'The familiar voice' } },
+        { key: 'C', text: 'Stay still. Wait for it to speak again.',        card: { type: 'Ambiguous Intention', name: 'The familiar voice' } },
+        { key: 'D', text: 'Cover your ears.',                               card: null },
+        { key: 'E', text: 'Pretend you didn\'t hear it.',                   card: null },
       ],
     },
     {
       id: 'S-04',
-      narrative: 'A faded family photo hangs on the wall. Something feels off. Someone might be missing. Or the arrangement is wrong.',
-      question: 'Who do you look at first?',
+      narrative: 'The floor gives way to soft ground. In the center, a small mound of earth. Something has been buried here — in the place you keep returning to.',
+      question: 'A small box is buried in the place you always return to. What do you do?',
       choices: [
-        { key: 'A', text: 'The person in the center.',                      card: null },
-        { key: 'B', text: 'The person at the edge.',                        card: { type: 'Relationship', name: 'The one at the edge' } },
-        { key: 'C', text: 'The person not looking at the camera.',          card: { type: 'Emotion',      name: 'The one looking away' } },
-        { key: 'D', text: 'The empty space. Someone should be there.',      card: { type: 'Relationship', name: 'The missing person' } },
-        { key: 'E', text: 'The whole photo first. No one in particular.',   card: null },
+        { key: 'A', text: 'Dig it up immediately.',                         card: { type: 'Secret', name: 'The buried box' } },
+        { key: 'B', text: 'Touch the ground above it. Don\'t dig.',         card: { type: 'Secret', name: 'The buried box' } },
+        { key: 'C', text: 'Bury it deeper.',                                card: { type: 'Secret', name: 'The buried box' } },
+        { key: 'D', text: 'Walk away. Some things stay buried.',            card: null },
+        { key: 'E', text: 'Mark the spot. Come back later.',                card: null },
       ],
     },
     {
       id: 'S-05',
-      narrative: 'Five photographs hang on the wall. You can take one.',
-      question: 'Which do you take?',
+      narrative: 'A mirror appears — but it has two faces. One shows you as you are. The other shows something slightly different. Someone behind you is taking measurements.',
+      question: 'Someone stands still before a mirror with two faces, while being measured. What do you do?',
       choices: [
-        { key: 'A', text: 'People gathered, laughing. Their faces are blurred.',    card: { type: 'Relationship', name: 'The blurred crowd' } },
-        { key: 'B', text: 'An empty room. Light through a window.',                 card: { type: 'Memory',       name: 'The room before' } },
-        { key: 'C', text: 'The ocean, just before a storm.',                        card: { type: 'Emotion',      name: 'The held moment' } },
-        { key: 'D', text: 'A child looking back. Expression hidden.',               card: { type: 'Memory',       name: 'The backward glance' } },
-        { key: 'E', text: 'You don\'t take anything.',                              card: null },
+        { key: 'A', text: 'Look at the version that\'s different.',         card: { type: 'Evaluation', name: 'The double mirror' } },
+        { key: 'B', text: 'Look at the version that\'s you.',               card: null },
+        { key: 'C', text: 'Turn around. Face whoever is measuring.',        card: { type: 'Evaluation', name: 'The double mirror' } },
+        { key: 'D', text: 'Stand still. Let them measure.',                 card: { type: 'Evaluation', name: 'The double mirror' } },
+        { key: 'E', text: 'Break the mirror.',                              card: null },
       ],
     },
     {
       id: 'S-06',
-      narrative: 'Your phone buzzes. Sender: someone close. Message: "We should talk."',
-      question: 'What happens in your body first?',
+      narrative: 'You find yourself making a gesture — something habitual, something yours. A hand on the back of your neck. A way of standing. Someone nearby is writing it down.',
+      question: 'A familiar gesture is performed for someone who is writing it down. What do you do?',
       choices: [
-        { key: 'A', text: 'Heart speeds up.',                               card: { type: 'Emotion', name: 'The alarm' } },
-        { key: 'B', text: 'Stomach gets heavy.',                            card: { type: 'Emotion', name: 'The weight' } },
-        { key: 'C', text: 'Nothing. It\'s just a text.',                    card: null },
-        { key: 'D', text: 'Hands go cold.',                                 card: { type: 'Emotion', name: 'The freeze' } },
-        { key: 'E', text: 'You reply immediately: "About what?"',           card: null },
+        { key: 'A', text: 'Keep going. Pretend you don\'t notice.',         card: { type: 'Evaluation', name: 'The recorded gesture' } },
+        { key: 'B', text: 'Stop the gesture. Become still.',                card: null },
+        { key: 'C', text: 'Ask what they\'re writing.',                     card: { type: 'Evaluation', name: 'The recorded gesture' } },
+        { key: 'D', text: 'Exaggerate the gesture. Make it a performance.', card: { type: 'Evaluation', name: 'The recorded gesture' } },
+        { key: 'E', text: 'Take the pen from them.',                        card: null },
       ],
     },
   ],
@@ -435,6 +435,7 @@ const Game = {
     document.getElementById('token-words').innerHTML =
       '<span class="loading-text">distilling...</span>';
 
+    let tokenWords = ['silence', 'trace', 'door'];
     try {
       const res = await fetch('/api/token', {
         method: 'POST',
@@ -442,16 +443,60 @@ const Game = {
         body: JSON.stringify({ sessionData: this.getSessionData() }),
       });
       const data = await res.json();
+      tokenWords = data.words;
       document.getElementById('token-words').innerHTML = data.words
         .map((w, i) =>
           `<span class="token-word" style="animation-delay:${i * 0.25}s">${w}</span>`
         ).join('');
     } catch {
       document.getElementById('token-words').innerHTML =
-        '<span class="token-word">silence</span>' +
-        '<span class="token-word">trace</span>' +
-        '<span class="token-word">door</span>';
+        tokenWords.map(w => `<span class="token-word">${w}</span>`).join('');
     }
+
+    // ── Deposit token into the pool ──
+    const cardTypes = [...new Set(session.cards.map(c => c.type))];
+    let depositedId = '';
+    try {
+      const depRes = await fetch('/api/pool/deposit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          archetype: session.character?.archetype || 'The One Who Passed Through',
+          signature: session.character?.signature || '',
+          description: session.character?.description || '',
+          words: tokenWords,
+          message: session.finalMessage,
+          situation: session.situation,
+          cardTypes,
+        }),
+      });
+      const depData = await depRes.json();
+      depositedId = depData.tokenId || '';
+    } catch { /* silent */ }
+
+    // ── Receive a stranger's token from the pool ──
+    await delay(1500);
+    try {
+      const rcvRes = await fetch(
+        `/api/pool/receive?cardTypes=${cardTypes.join(',')}&exclude=${depositedId}`
+      );
+      const rcvData = await rcvRes.json();
+      if (rcvData.token) {
+        session.receivedToken = rcvData.token;
+        this.showReceivedToken(rcvData.token);
+      }
+    } catch { /* silent */ }
+  },
+
+  showReceivedToken(token) {
+    const section = document.getElementById('received-section');
+    if (!section) return;
+    section.style.display = 'flex';
+    document.getElementById('recv-archetype').textContent = token.archetype || 'A stranger';
+    document.getElementById('recv-message').textContent = token.message
+      ? `"${token.message}"`
+      : 'They left something here, but the words have faded.';
+    document.getElementById('recv-sig').textContent = token.signature || '';
   },
 
   // ── HELPER ─────────────────────────────────────────────

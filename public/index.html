@@ -13,7 +13,7 @@
   <div id="phase-start" class="phase active">
     <div class="eyebrow">Session 001</div>
     <h1 class="title">The White<br><em>Room</em></h1>
-    <p class="lead">The moment you enter,<br/>something begins to observe you.</p>
+    <p class="lead">You have never seen your own face.<br/>Only reflections.</p>
     <button class="btn" onclick="Game.start()">Enter the room</button>
   </div>
 
@@ -90,9 +90,24 @@
       <div id="token-to" class="token-to"></div>
     </div>
     <p class="lead" style="font-size:0.78rem; margin-top:1.5rem;">
-      This token will find its way to someone who needs it.
+      Your story has been placed into the pool.<br/>
+      In return, someone has left something for you.
     </p>
-    <button class="btn" onclick="location.reload()">Return to the beginning</button>
+
+    <!-- Received token from a stranger -->
+    <div id="received-section" style="display:none; flex-direction:column; align-items:center; gap:1rem; width:100%; margin-top:1rem; animation: fadeUp 0.8s ease;">
+      <div class="eyebrow">a stranger's token</div>
+      <div style="border-left:2px solid var(--accent); padding-left:1.2rem; max-width:420px;">
+        <div id="recv-archetype" style="font-size:0.9rem; color:var(--dark); margin-bottom:0.5rem;"></div>
+        <div id="recv-message" style="font-size:0.85rem; line-height:2; color:var(--mid); font-style:italic;"></div>
+        <div id="recv-sig" style="font-size:0.7rem; color:var(--accent); letter-spacing:0.12em; margin-top:0.5rem;"></div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:1rem; margin-top:1.5rem;">
+      <button class="btn" onclick="location.reload()">Return to the beginning</button>
+      <button class="btn" onclick="window.open('/pool.html','_blank')">Enter the pool →</button>
+    </div>
   </div>
 
 </div>

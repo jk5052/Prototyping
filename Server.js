@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
+const pathMod = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
 const PROMPTS = require('./prompts');
 
@@ -10,6 +12,14 @@ app.use(express.json());
 app.use(express.static('public'));
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// ─── TOKEN POOL (persistent JSON file) ──────────────────────────────────────
+const POOL_PATH = pathMod.join(__dirname, 'token-pool.json');
+function readPool() {
+  try { if (fs.existsSync(POOL_PATH)) return JSON.parse(fs.readFileSync(POOL_PATH, 'utf8')); } catch { /* */ }
+  return [];
+}
+function writePool(pool) { fs.writeFileSync(POOL_PATH, JSON.stringify(pool, null, 2)); }
 
 // ─── ROUTES ──────────────────────────────────────────────────────────────────
 
@@ -105,6 +115,51 @@ app.post('/api/token', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── TOKEN POOL ROUTES ──────────────────────────────────────────────────────
+
+// Deposit a token into the pool
+app.post('/api/pool/deposit', (req, res) => {
+  const { archetype, signature, description, words, message, situation, cardTypes, defenseHint } = req.body;
+  const pool = readPool();
+  const token = {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    archetype, signature, description, words, message, situation,
+    cardTypes: cardTypes || [],
+    defenseHint: defenseHint || '',
+    createdAt: new Date().toISOString(),
+  };
+  pool.push(token);
+  writePool(pool);
+  res.json({ ok: true, tokenId: token.id });
+});
+
+// Receive a matching token from the pool
+app.get('/api/pool/receive', (req, res) => {
+  const { cardTypes, exclude } = req.query;
+  const pool = readPool();
+  if (pool.length === 0) return res.json({ token: null });
+  const myTypes = cardTypes ? cardTypes.split(',') : [];
+  const candidates = pool
+    .filter(t => t.id !== exclude)
+    .map(t => {
+      let score = 0;
+      myTypes.forEach(mt => { if (t.cardTypes.includes(mt)) score += 1; });
+      score += Math.random() * 0.5;
+      return { ...t, score };
+    })
+    .sort((a, b) => b.score - a.score);
+  res.json({ token: candidates[0] || pool[Math.floor(Math.random() * pool.length)] });
+});
+
+// Get all tokens for pool visualization
+app.get('/api/pool/all', (_req, res) => {
+  const pool = readPool();
+  res.json({
+    tokens: pool.map(t => ({ id: t.id, archetype: t.archetype, words: t.words, createdAt: t.createdAt })),
+    total: pool.length,
+  });
 });
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
