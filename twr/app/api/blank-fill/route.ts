@@ -4,7 +4,7 @@
 //                        → embed (text-embedding-3-large 3072d halfvec)
 //                          + snapshot primary_defense from narrative_logs
 //                          + upsert one row per session_id
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,7 +28,11 @@ function pickTemplate(templates: TemplateRow[], session_id: string): TemplateRow
   return templates[hashSeed(session_id) % templates.length]
 }
 
-async function loadActiveTemplates(sup: SupabaseClient): Promise<TemplateRow[]> {
+// SupabaseClient generics shift between minor 2.x bumps and the no-args
+// inference is incompatible with createClient(url, key, opts) returns.
+// Side-stepping with `any` — this helper is internal, no API surface.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadActiveTemplates(sup: any): Promise<TemplateRow[]> {
   const { data, error } = await sup
     .from('blank_fill_templates')
     .select('id, template')
