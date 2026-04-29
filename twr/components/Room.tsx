@@ -3,6 +3,7 @@ import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber'
 import { useGLTF, OrbitControls, Environment } from '@react-three/drei'
 import { Suspense, useEffect, useRef } from 'react'
 import * as THREE from 'three'
+import { resolveModelUrl } from '@/lib/assets'
 
 interface RoomProps {
   modelPath: string
@@ -80,7 +81,9 @@ function findInteractiveAncestor(
 }
 
 function Scene({ modelPath, onObjectClick, isInteractive }: RoomProps) {
-  const { scene, cameras } = useGLTF(modelPath)
+  // modelPath stays a stable id ('/models/r1.glb') for the override tables;
+  // only the URL handed to useGLTF gets rewritten to an external CDN when set.
+  const { scene, cameras } = useGLTF(resolveModelUrl(modelPath))
   const { camera, controls } = useThree() as { camera: THREE.PerspectiveCamera; controls: { target: THREE.Vector3; update: () => void } | null }
   const fittedFor = useRef<string | null>(null)
   const hoveredRef = useRef<HoverState | null>(null)
