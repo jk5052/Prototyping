@@ -109,15 +109,23 @@ export default function Home() {
     )
   }
 
-  // Intro (placeholder)
+  // Intro — introvideo.mp4 재생 후 자동으로 room1. 클릭 시 스킵.
   if (phase === 'intro') {
     return (
       <div
         onClick={() => setPhase('room1')}
         className="w-screen h-screen bg-black flex items-center justify-center cursor-pointer"
       >
-        <p className="text-white/30 text-sm animate-pulse">
-          [ Intro video placeholder — click to enter Room 1 ]
+        <video
+          src="/introvideo.mp4"
+          autoPlay
+          muted
+          playsInline
+          onEnded={() => setPhase('room1')}
+          className="w-full h-full object-cover"
+        />
+        <p className="absolute bottom-6 right-6 text-white/30 text-[10px] tracking-[0.3em] uppercase pointer-events-none">
+          click to skip
         </p>
       </div>
     )

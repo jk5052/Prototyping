@@ -1,6 +1,6 @@
 'use client'
 import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber'
-import { useGLTF, OrbitControls, Environment } from '@react-three/drei'
+import { useGLTF, OrbitControls, Environment, Html } from '@react-three/drei'
 import { Suspense, useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { resolveModelUrl } from '@/lib/assets'
@@ -474,7 +474,13 @@ export default function Room({ modelPath, onObjectClick, isInteractive, disableC
           IBL 은 회색 fill 용 (intensity 0.35) — mood 는 puncutal light 가 좌우. */}
       <color attach="background" args={['#030303']} />
       <ambientLight intensity={0.04} />
-      <Suspense fallback={null}>
+      <Suspense fallback={
+        <Html center>
+          <div className="text-white/40 text-[10px] tracking-[0.4em] uppercase animate-pulse">
+            loading…
+          </div>
+        </Html>
+      }>
         <Environment preset="apartment" environmentIntensity={0.06} background={false} />
         <Scene
           modelPath={modelPath}

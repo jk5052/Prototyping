@@ -10,9 +10,15 @@
 const RAW_BASE = process.env.NEXT_PUBLIC_MODELS_BASE_URL ?? ''
 const BASE = RAW_BASE.replace(/\/+$/, '')
 
+if (typeof window !== 'undefined') {
+  console.log('[assets] NEXT_PUBLIC_MODELS_BASE_URL =', BASE || '(empty → local /models)')
+}
+
 export function resolveModelUrl(path: string): string {
   if (!BASE) return path
   // path is like '/models/r1.glb' — strip the local prefix and append filename
   const filename = path.replace(/^\/models\//, '')
-  return `${BASE}/${filename}`
+  const out = `${BASE}/${filename}`
+  if (typeof window !== 'undefined') console.log('[assets] resolve', path, '→', out)
+  return out
 }
