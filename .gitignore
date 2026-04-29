@@ -12,3 +12,10 @@ node_modules/
 # Token pool (runtime data)
 token-pool.json
 
+# Large binary assets — hosted externally, not in repo
+# 3D room models (load from external storage at runtime)
+twr/public/models/*.glb
+# Raw academic source PDFs + intermediate dump (already embedded in Supabase)
+twr/dataset/raw/
+twr/dataset/processed/passages_raw.json
+
