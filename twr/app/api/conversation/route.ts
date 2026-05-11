@@ -1,10 +1,11 @@
 // POST /api/conversation
-// Void(finalroom) 단계의 LLM 대화. session_id 의 narrative_logs 로
-// 방어기제 프로필을 만들고, stimuli_cleaned.json 에서 같은 defense 의
-// 영화 시나리오를 골라 첫 메시지로 던진다. 그 후 LLM 이 "what would you do?
-// why?" 를 영어로 probe. 모든 출력은 영어.
+// Void(finalroom) 단계의 LLM 대화. 첫 턴에서 session_analysis row 를
+// 가져오거나 (lazy) 생성하고, 그 통합 프로필의 primary_defense 로
+// stimuli_cleaned.json 의 영화 시나리오를 골라 첫 메시지로 던진다. 이후
+// LLM 이 "what would you do? why?" 를 영어로 probe. 모든 출력은 영어.
 import { createClient } from '@supabase/supabase-js'
 import stimuli from '@/dataset/processed/stimuli_cleaned.json'
+import { getOrCreateSessionAnalysis } from '@/lib/sessionAnalysis'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,7 +21,6 @@ interface ConvRequest { session_id: string; messages: ChatMsg[] }
 interface NarrativeRow {
   room: number; prompt: string; label: string
   primary_defense: string | null; secondary_defense: string | null
-  metaphors: string[] | null; motifs: string[] | null
 }
 
 interface StimEntry {
@@ -45,27 +45,56 @@ export async function POST(request: Request) {
 
   const sup = createClient(url, secret, { auth: { persistSession: false, autoRefreshToken: false } })
 
-  // 1) narrative_logs 로 defense 프로필 + 최근 선택 6개
-  const { data: rows, error: logErr } = await sup
+  // 1) 통합 분석 — session_analysis 캐시 hit 또는 즉시 계산.
+  //    첫 턴에서 비싸지만 (Claude 1회) 한 번 만들어두면 이후 턴은 그냥 읽음.
+  //    데이터가 진짜로 0/0 이면 fallback 으로 narrative_logs 만 카운트.
+  const ana = await getOrCreateSessionAnalysis(sup, anthropic, body.session_id)
+  let topDefs: Array<{ defense: string; weight: number }>
+  let topDef: string | null
+  let analysisSummary: string | null = null
+  let dataDensity: 'rich' | 'sparse' | 'minimal' | 'empty' = 'empty'
+
+  if ('error' in ana && ana.status !== 409) {
+    return Response.json({ error: ana.error }, { status: ana.status })
+  }
+  if ('row' in ana) {
+    const w = ana.row.defense_weights ?? {}
+    topDefs = Object.entries(w)
+      .sort((a, b) => (b[1] as number) - (a[1] as number))
+      .slice(0, 3)
+      .map(([d, v]) => ({ defense: d, weight: Number((v as number).toFixed(2)) }))
+    if (topDefs.length === 0) topDefs = [{ defense: ana.row.primary_defense, weight: 1 }]
+    topDef = ana.row.primary_defense
+    analysisSummary = ana.row.summary
+    dataDensity = ana.row.data_density
+  } else {
+    // fallback: narrative_logs 로만 카운트 (journals 0 + analysis 실패 시)
+    const { data: rows } = await sup
+      .from('narrative_logs')
+      .select('room, prompt, label, primary_defense, secondary_defense')
+      .eq('session_id', body.session_id)
+      .order('played_at', { ascending: true })
+    const logs = (rows ?? []) as NarrativeRow[]
+    const counts: Record<string, number> = {}
+    for (const r of logs) {
+      if (r.primary_defense)   counts[r.primary_defense]   = (counts[r.primary_defense]   ?? 0) + 1.0
+      if (r.secondary_defense) counts[r.secondary_defense] = (counts[r.secondary_defense] ?? 0) + 0.5
+    }
+    const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1])
+    topDefs = ranked.slice(0, 3).map(([d, w]) => ({ defense: d, weight: Number(w.toFixed(2)) }))
+    topDef = topDefs[0]?.defense ?? null
+  }
+
+  // 2) 최근 선택 6개 (톤/모티프 단서) — 분석 결과와 무관하게 항상 표시
+  const { data: recentRows } = await sup
     .from('narrative_logs')
-    .select('room, prompt, label, primary_defense, secondary_defense, metaphors, motifs')
+    .select('room, prompt, label, primary_defense, secondary_defense')
     .eq('session_id', body.session_id)
     .order('played_at', { ascending: true })
-  if (logErr) return Response.json({ error: 'narrative_logs read failed: ' + logErr.message }, { status: 500 })
+  const logs = (recentRows ?? []) as NarrativeRow[]
 
-  const logs = (rows ?? []) as NarrativeRow[]
-  const counts: Record<string, number> = {}
-  for (const r of logs) {
-    if (r.primary_defense)   counts[r.primary_defense]   = (counts[r.primary_defense]   ?? 0) + 1.0
-    if (r.secondary_defense) counts[r.secondary_defense] = (counts[r.secondary_defense] ?? 0) + 0.5
-  }
-  const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1])
-  const topDefs = ranked.slice(0, 3).map(([d, w]) => ({ defense: d, weight: Number(w.toFixed(2)) }))
-  const topDef = topDefs[0]?.defense ?? null
-
-  // 2) stimuli_cleaned.json 에서 top defense 매칭 시나리오를 confidence 순으로
-  //    뽑음. 첫 턴에 사용할 primary 1개 + 후속 probe 용 2개. session_id hash 로
-  //    deterministic 하게 1개 픽 (같은 세션 새로고침해도 같은 시나리오).
+  // 3) stimuli_cleaned.json 에서 top defense 매칭 시나리오를 confidence 순으로
+  //    뽑음. session_id hash 로 deterministic 하게 1개 픽.
   const matched = topDef
     ? STIMULI.filter(s => s.defense === topDef)
         .sort((a, b) => b.confidence - a.confidence)
@@ -75,7 +104,6 @@ export async function POST(request: Request) {
   const primaryStim = matched.length > 0 ? matched[Math.abs(seed) % matched.length] : null
   const altStims = matched.filter(s => s !== primaryStim)
 
-  // 3) 최근 선택 6개 — 톤/모티프 단서
   const recent = logs.slice(-6).map((r, i) =>
     `${i + 1}. R${r.room} prompt="${r.prompt.slice(0, 100)}" → chose="${r.label.slice(0, 100)}" [${r.primary_defense ?? '?'}]`
   ).join('\n') || '(no recorded choices)'
@@ -105,6 +133,9 @@ export async function POST(request: Request) {
     '',
     'Player defense profile (internal context — do NOT mention by name):',
     `  ${profileLine}`,
+    analysisSummary
+      ? `Internal analyst summary (do NOT quote, never mention to player):\n  ${analysisSummary}`
+      : '',
     'Recent choices (internal context — do NOT quote verbatim):',
     recent,
     '',
@@ -149,6 +180,7 @@ export async function POST(request: Request) {
     turn_count:    userTurns + 1,        // assistant 응답 후 진행된 턴 수
     kind:          wantsClosing ? 'closing' : 'question',
     profile:       topDefs,
+    data_density:  dataDensity,
     films_used:    matched.map(s => s.film),
     primary_film:  primaryStim?.film ?? null,
     model_version:  MODEL_VERSION,

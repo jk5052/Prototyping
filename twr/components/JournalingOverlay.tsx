@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from 'react'
 import { getSupabase } from '@/lib/supabase'
 import { getPlayerId, getSessionId } from '@/lib/session'
 
-const MODEL_VERSION  = 'claude-sonnet-4-5'
-const SCHEMA_VERSION = 'vocab@1.0'
+// model/schema 는 서버 응답을 그대로 반영 — 클라이언트 상수는 fallback.
+const MODEL_VERSION_FALLBACK  = 'claude-sonnet-4-5'
+const SCHEMA_VERSION_FALLBACK = 'journaling@1.0'
 
 interface PromptResponse {
   prompt:         string
@@ -35,6 +36,8 @@ export default function JournalingOverlay({
   const [response, setResponse] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const contextNRef = useRef<number>(0)
+  const modelVerRef = useRef<string>(MODEL_VERSION_FALLBACK)
+  const schemaVerRef = useRef<string>(SCHEMA_VERSION_FALLBACK)
   const fetchedRef  = useRef(false)
 
   const fetchPrompt = async (words: string[]) => {
@@ -59,6 +62,8 @@ export default function JournalingOverlay({
       const j = await r.json() as PromptResponse
       setPrompt(j.prompt)
       contextNRef.current = j.context_n
+      modelVerRef.current  = j.model_version  || MODEL_VERSION_FALLBACK
+      schemaVerRef.current = j.schema_version || SCHEMA_VERSION_FALLBACK
       setStep('writing')
     } catch (e) {
       setError(String(e).slice(0, 200))
@@ -85,16 +90,17 @@ export default function JournalingOverlay({
     setSubmitting(true)
     try {
       if (prompt) {
-        await getSupabase().from('journals').insert({
-          session_id: getSessionId(),
+        const sessionId = getSessionId()
+        await getSupabase(sessionId).from('journals').insert({
+          session_id: sessionId,
           player_id:  getPlayerId() || null,
           from_room:  fromRoom,
           to_room:    toRoom,
           prompt,
           response:   writeResponse,
           context_n:  contextNRef.current,
-          model_version:  MODEL_VERSION,
-          schema_version: SCHEMA_VERSION,
+          model_version:  modelVerRef.current,
+          schema_version: schemaVerRef.current,
         })
       }
     } catch (e) {

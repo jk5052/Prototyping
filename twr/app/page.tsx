@@ -24,6 +24,7 @@ import JournalingOverlay from '@/components/JournalingOverlay'
 import VoidDialogue from '@/components/VoidDialogue'
 import BlankFillOverlay from '@/components/BlankFillOverlay'
 import LetterOverlay from '@/components/LetterOverlay'
+import SealingOverlay from '@/components/SealingOverlay'
 import CardOverlay from '@/components/CardOverlay'
 
 const ROOM_PHASES = ['room1', 'room2', 'room3', 'room4', 'room5'] as const
@@ -139,6 +140,9 @@ export default function Home() {
     const showNextBtn = !chain && !showIntro
     const nextPhase: RoomPhase | 'conversation' =
       roomNumber < 5 ? (`room${roomNumber + 1}` as RoomPhase) : 'conversation'
+    // 한 번 진행한 아이템은 재클릭 lockout. door 는 choices 에 기록되지 않으므로 자연히 제외.
+    const isUsed = (name: string) =>
+      choices.some((c) => c.room === roomNumber && c.itemId === name)
 
     return (
       <div className="relative w-screen h-screen bg-black">
@@ -154,12 +158,15 @@ export default function Home() {
               return
             }
             if (item.events.length === 0) return
-            // TODO: cctv/oneTimeOnly 분기는 후속 작업
+            if (isUsed(name)) return
             setChain({ itemId: name, events: item.events, index: 0 })
           }}
           isInteractive={(name) =>
-            !!ITEM_BY_NAME[name] && !chain && !showIntro
+            !!ITEM_BY_NAME[name] && !chain && !showIntro && !journaling && !isUsed(name)
           }
+          isItem={(name) => !!ITEM_BY_NAME[name]}
+          isUsed={isUsed}
+          disableControls
         />
 
         {showIntro && (
@@ -292,7 +299,23 @@ export default function Home() {
           isInteractive={() => false}
           disableControls
         />
-        <LetterOverlay onComplete={() => setPhase('card')} />
+        <LetterOverlay onComplete={() => setPhase('sealing')} />
+      </div>
+    )
+  }
+
+  // Sealing ritual — 같은 finalroom 배경 위에서 떠나기 전 3개 짧은 문장.
+  // letter 후 card 직전. final_reflections 에 prompt_key 별 upsert.
+  if (phase === 'sealing') {
+    return (
+      <div className="relative w-screen h-screen bg-black">
+        <Room
+          modelPath={FINAL_MODEL}
+          onObjectClick={() => {}}
+          isInteractive={() => false}
+          disableControls
+        />
+        <SealingOverlay onComplete={() => setPhase('card')} />
       </div>
     )
   }

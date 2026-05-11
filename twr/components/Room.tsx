@@ -1,5 +1,5 @@
 'use client'
-import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { useGLTF, OrbitControls, Environment, Html } from '@react-three/drei'
 import { Suspense, useEffect, useRef } from 'react'
 import * as THREE from 'three'
@@ -9,13 +9,34 @@ interface RoomProps {
   modelPath: string
   onObjectClick: (name: string) => void
   isInteractive: (name: string) => boolean
+  // 이름이 ITEM_BY_NAME 에 등록된 인터랙티브 아이템인지 (chain/intro 게이트와 무관).
+  // glow registry 빌드용 — load 시점엔 isInteractive 가 항상 false 라서 분리 필요.
+  isItem?: (name: string) => boolean
+  // 이미 클릭해서 진행 완료된 아이템 — true 면 glow 와 클릭 둘 다 lockout.
+  isUsed?: (name: string) => boolean
   disableControls?: boolean
 }
 
 type EmissiveMat = THREE.Material & { emissive: THREE.Color; emissiveIntensity: number }
-type HoverState = { root: THREE.Object3D; saved: Map<EmissiveMat, { emissive: THREE.Color; intensity: number }> }
-const HOVER_COLOR = new THREE.Color(0xffe6b0)
+// glow registry 한 entry. 각 인터랙티브 root 별 emissive mats 와 base scale 보관.
+// pulseStart: 클릭 시 performance.now() 기록 → useFrame 에서 short flash + scale bump.
+type GlowMat = { mat: EmissiveMat; baseEmissive: THREE.Color; baseIntensity: number }
+type GlowEntry = {
+  name: string
+  root: THREE.Object3D
+  mats: GlowMat[]
+  baseScale: number
+  phaseOffset: number
+  pulseStart: number | null
+}
+const GLOW_COLOR = new THREE.Color(0xffe6b0)
 const HOVER_INTENSITY = 0.55
+const IDLE_BASE = 0.18
+const IDLE_AMP = 0.06
+const IDLE_RATE = 1.6
+const PULSE_DUR = 0.24
+const PULSE_INTENSITY_PEAK = 0.5
+const PULSE_SCALE_PEAK = 0.04
 
 // 방별 카메라 수동 override. Spline GLB 의 export 카메라가 reference 시점과 안 맞을 때
 // 사용. pos/target 은 GLB world space (Spline cm 단위). 정의 안된 modelPath 는 자동
@@ -54,6 +75,8 @@ type LightBoost = { spot: number; point: number; directional: number; decayZero:
 const DEFAULT_LIGHT_BOOST: LightBoost = { spot: 12, point: 3, directional: 0.4, decayZero: true }
 const LIGHT_BOOST: Record<string, LightBoost> = {
   '/models/finalroom.glb': { spot: 0.15, point: 0.15, directional: 0.15, decayZero: false },
+  // R2: cabinet/벽지가 너무 밝게 나와서 default 의 절반으로 dim.
+  '/models/r2.glb':        { spot: 6,    point: 1.5,  directional: 0.2,  decayZero: true  },
 }
 
 // GLB 안의 named 카메라가 transform 이상해서 (0.01 scale 등) raycast 가 빈 공간 향할 때
@@ -63,37 +86,39 @@ const FORCE_BBOX_FIT: Record<string, boolean> = {
   '/models/r2.glb': true,
 }
 
+// bbox-fit fallback 의 dist 에 곱해지는 룸별 후진 배율. 1.0 = 자동 fit 그대로,
+// >1 = 카메라를 +Z 로 더 빼서 같은 각도로 살짝 줌아웃. 룸 2 는 캐비닛이 fit
+// 프레임 밖으로 살짝 잘려 1.25 로 살짝 빼준다.
+const BBOX_FIT_BACK_MULT: Record<string, number> = {
+  '/models/r2.glb': 1.25,
+}
+
 // 디버그 토글: true 면 isInteractive 필터 bypass 하고 hit 된 mesh 이름을 그대로
 // onObjectClick 으로 전달. R3F raycast 자체는 동작하는데 events.ts mapping 만 빠진
 // 상황을 검증하기 위함.
 const DEBUG_ALL_HITS = true
 
-function findInteractiveAncestor(
-  obj: THREE.Object3D | null,
-  isInteractive: (name: string) => boolean,
-): THREE.Object3D | null {
-  let cur: THREE.Object3D | null = obj
-  while (cur) {
-    if (cur.name && isInteractive(cur.name)) return cur
-    cur = cur.parent
-  }
-  return null
-}
-
-function Scene({ modelPath, onObjectClick, isInteractive }: RoomProps) {
+function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed }: RoomProps) {
   // modelPath stays a stable id ('/models/r1.glb') for the override tables;
   // only the URL handed to useGLTF gets rewritten to an external CDN when set.
   const { scene, cameras } = useGLTF(resolveModelUrl(modelPath))
   const { camera, controls } = useThree() as { camera: THREE.PerspectiveCamera; controls: { target: THREE.Vector3; update: () => void } | null }
   const fittedFor = useRef<string | null>(null)
-  const hoveredRef = useRef<HoverState | null>(null)
   // canvas-level pointerdown 이 사용. R3F 이벤트 시스템이 일부 GLB scene 에서
   // primitive 자식 mesh 까지 raycast 결과를 propagate 못 하는 케이스 우회용.
   const meshesRef = useRef<THREE.Object3D[]>([])
+  // glow/hover/pulse 모두 useFrame 에서 frame-driven 으로 처리. hoveredNameRef 는
+  // 현재 호버된 root 이름, glowsRef 는 인터랙티브 아이템 root 의 emissive mat 등록부.
+  const glowsRef = useRef<GlowEntry[]>([])
+  const hoveredNameRef = useRef<string | null>(null)
   const isInteractiveRef = useRef(isInteractive)
   const onObjectClickRef = useRef(onObjectClick)
+  const isItemRef = useRef(isItem)
+  const isUsedRef = useRef(isUsed)
   isInteractiveRef.current = isInteractive
   onObjectClickRef.current = onObjectClick
+  isItemRef.current = isItem
+  isUsedRef.current = isUsed
 
   // 새 GLB 로드 시 1회: GLB 안에 export 된 카메라(이름 'Camera' 또는 'Player') 의
   // world transform 을 그대로 active 카메라에 복사. 카메라가 없는 GLB 면 mesh bbox
@@ -231,8 +256,9 @@ function Scene({ modelPath, onObjectClick, isInteractive }: RoomProps) {
       const fitH = (size.y / 2) / Math.tan(fovRad / 2)
       const fitW = (size.x / 2) / (Math.tan(fovRad / 2) * aspect)
       // Spline scene 은 단위가 cm 라 size 가 100+ 단위까지 큼. 상한 제거하고
-      // 실제 fit distance 를 그대로 사용 (최소 2 만 보장).
-      const dist = Math.max(2, Math.max(fitH, fitW) * 1.15)
+      // 실제 fit distance 를 그대로 사용 (최소 2 만 보장). 룸별 후진 배율 적용.
+      const backMult = BBOX_FIT_BACK_MULT[modelPath] ?? 1.0
+      const dist = Math.max(2, Math.max(fitH, fitW) * 1.15 * backMult)
       camera.position.set(center.x, center.y, center.z + dist)
       camera.near = Math.max(0.01, maxDim / 1000)
       camera.far  = Math.max(100, maxDim * 20)
@@ -338,123 +364,180 @@ function Scene({ modelPath, onObjectClick, isInteractive }: RoomProps) {
     }
   }, [scene, cameras, modelPath, camera, controls])
 
-  // 언마운트/모델 교체 시 hover 잔여 emissive 복원.
+  // glow registry: 인터랙티브 root 들의 emissive mat 스냅샷 + base scale 보관.
+  // fitting useEffect 와 분리한 이유 — fittedFor guard 로 fitting 은 한 번만 실행되지만,
+  // Strict Mode 더블-mount (mount → unmount → re-mount) 에서 cleanup 이 registry 를
+  // 비운 뒤 두 번째 mount 의 fitting effect 가 early return 하면 registry 가 빈 채로 남음.
+  // 이 effect 는 항상 매 mount 에서 빌드 + cleanup 에서 복원 → Strict Mode 안전.
   useEffect(() => {
+    const isItemFn = isItemRef.current
+    const glows: GlowEntry[] = []
+    if (isItemFn) {
+      const seen = new Set<THREE.Object3D>()
+      scene.traverse((o) => {
+        if (!o.name || !isItemFn(o.name)) return
+        let p: THREE.Object3D | null = o.parent
+        while (p) { if (seen.has(p)) return; p = p.parent }
+        const mats: GlowMat[] = []
+        const matSet = new Set<EmissiveMat>()
+        o.traverse((c) => {
+          const mesh = c as THREE.Mesh
+          if (!mesh.isMesh) return
+          const ms = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+          for (const m of ms) {
+            if (!m || !('emissive' in m)) continue
+            const mm = m as EmissiveMat
+            if (matSet.has(mm)) continue
+            matSet.add(mm)
+            mats.push({ mat: mm, baseEmissive: mm.emissive.clone(), baseIntensity: mm.emissiveIntensity ?? 1 })
+          }
+        })
+        if (mats.length === 0) return
+        glows.push({
+          name: o.name, root: o, mats,
+          baseScale: o.scale.x,
+          phaseOffset: Math.random() * Math.PI * 2,
+          pulseStart: null,
+        })
+        seen.add(o)
+      })
+    }
+    glowsRef.current = glows
+    console.log('[Room] glow registry', modelPath, 'roots=', glows.length,
+      'sample=', glows.slice(0, 6).map((g) => `${g.name}(${g.mats.length})`))
     return () => {
-      restoreHover()
+      for (const g of glowsRef.current) {
+        for (const m of g.mats) {
+          m.mat.emissive.copy(m.baseEmissive)
+          m.mat.emissiveIntensity = m.baseIntensity
+        }
+        g.root.scale.setScalar(g.baseScale)
+      }
+      glowsRef.current = []
+      hoveredNameRef.current = null
       document.body.style.cursor = ''
     }
-  }, [modelPath])
+  }, [scene, modelPath])
 
-  // R3F primitive 의 onPointerDown 이 일부 GLB scene 에서 fire 안 되는 문제 우회.
-  // canvas DOM 에 직접 pointerdown 붙이고 manual raycast 로 trail 따라 interactive
+  // glow / hover / click pulse 를 매 프레임 frame-driven 으로 적용.
+  // - 사용 안 된 인터랙티브 root: 부드러운 idle breathing emissive (warm cream).
+  // - hover 중 root: HOVER_INTENSITY 로 잠김.
+  // - 클릭 직후 PULSE_DUR 동안: emissive flash + 살짝 scale up.
+  // - 이미 사용된 (isUsed=true) root: emissive/scale 모두 base 로 복원 (lockout).
+  useFrame((state) => {
+    const t = state.clock.elapsedTime
+    const now = performance.now()
+    const hovered = hoveredNameRef.current
+    const used = isUsedRef.current
+    for (const g of glowsRef.current) {
+      let pulseI = 0, pulseScale = 1
+      if (g.pulseStart != null) {
+        const dt = (now - g.pulseStart) / 1000
+        if (dt >= PULSE_DUR) g.pulseStart = null
+        else {
+          const u = dt / PULSE_DUR
+          pulseI = PULSE_INTENSITY_PEAK * (1 - u)
+          pulseScale = 1 + PULSE_SCALE_PEAK * Math.sin(Math.PI * u)
+        }
+      }
+      g.root.scale.setScalar(g.baseScale * pulseScale)
+      const isUsedNow = !!used && used(g.name)
+      if (isUsedNow) {
+        for (const m of g.mats) {
+          m.mat.emissive.copy(m.baseEmissive)
+          m.mat.emissiveIntensity = m.baseIntensity
+        }
+        continue
+      }
+      const intensity = hovered === g.name
+        ? HOVER_INTENSITY + pulseI
+        : IDLE_BASE + IDLE_AMP * Math.sin(t * IDLE_RATE + g.phaseOffset) + pulseI
+      for (const m of g.mats) {
+        m.mat.emissive.copy(GLOW_COLOR)
+        m.mat.emissiveIntensity = intensity
+      }
+    }
+  })
+
+  // R3F primitive 의 onPointerDown/Move 가 일부 GLB scene 에서 fire 안 되는 문제 우회.
+  // canvas DOM 에 직접 pointerdown/move 붙이고 manual raycast 로 trail 따라 interactive
   // ancestor 찾음. R3F 의 raycaster 와 동일 로직 — camera + meshesRef.current.
   useEffect(() => {
     const canvas = document.querySelector('canvas') as HTMLCanvasElement | null
     if (!canvas) return
     const ray = new THREE.Raycaster()
     const ndc = new THREE.Vector2()
-    const onDown = (ev: PointerEvent) => {
-      const meshes = meshesRef.current
-      if (!meshes.length) return
+    const setNdc = (ev: PointerEvent) => {
       const r = canvas.getBoundingClientRect()
       ndc.set(
         ((ev.clientX - r.left) / r.width) * 2 - 1,
         -((ev.clientY - r.top) / r.height) * 2 + 1,
       )
+    }
+    const onDown = (ev: PointerEvent) => {
+      const meshes = meshesRef.current
+      if (!meshes.length) return
+      setNdc(ev)
       ray.setFromCamera(ndc, camera)
       const hits = ray.intersectObjects(meshes, false)
-      if (!hits.length) {
-        console.log('[Room][canvas] miss @', ev.clientX, ev.clientY, 'ndc=', ndc.x.toFixed(2), ndc.y.toFixed(2))
-        return
-      }
-      const hit = hits[0]
-      const hitName = hit.object.name || '(unnamed)'
-      const p = hit.point
-      let obj: THREE.Object3D | null = hit.object
-      const trail: string[] = []
+      if (!hits.length) return
+      let obj: THREE.Object3D | null = hits[0].object
       const isI = isInteractiveRef.current
       const onClick = onObjectClickRef.current
       while (obj) {
-        if (obj.name) trail.push(obj.name)
         if (obj.name && isI(obj.name)) {
-          console.log('[Room][canvas] match', obj.name, 'hit=', hitName, '@', p.x.toFixed(1), p.y.toFixed(1), p.z.toFixed(1), 'trail:', trail)
+          // click pulse 시작 — useFrame 이 PULSE_DUR 동안 flash + scale 처리.
+          const g = glowsRef.current.find((e) => e.root === obj)
+          if (g) g.pulseStart = performance.now()
           onClick(obj.name)
           return
         }
         obj = obj.parent
       }
-      if (DEBUG_ALL_HITS) {
-        console.log('[Room][canvas][DEBUG] hit but no isInteractive match. hit=', hitName, 'trail:', trail)
-        for (const n of trail) onClick(n)
-        return
-      }
-      console.log('[Room][canvas] no match. hit=', hitName, 'trail:', trail)
     }
-    canvas.addEventListener('pointerdown', onDown)
-    return () => canvas.removeEventListener('pointerdown', onDown)
-  }, [camera, modelPath])
-
-  function applyHover(root: THREE.Object3D) {
-    const saved = new Map<EmissiveMat, { emissive: THREE.Color; intensity: number }>()
-    root.traverse((c) => {
-      const mesh = c as THREE.Mesh
-      if (!(mesh as THREE.Mesh).isMesh) return
-      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
-      for (const m of mats) {
-        if (!m || !('emissive' in m)) continue
-        const mm = m as EmissiveMat
-        if (saved.has(mm)) continue
-        saved.set(mm, { emissive: mm.emissive.clone(), intensity: mm.emissiveIntensity ?? 1 })
-        mm.emissive.copy(HOVER_COLOR)
-        mm.emissiveIntensity = HOVER_INTENSITY
+    const onMove = (ev: PointerEvent) => {
+      const meshes = meshesRef.current
+      if (!meshes.length) return
+      setNdc(ev)
+      ray.setFromCamera(ndc, camera)
+      const hits = ray.intersectObjects(meshes, false)
+      const isI = isInteractiveRef.current
+      let foundName: string | null = null
+      if (hits.length) {
+        let obj: THREE.Object3D | null = hits[0].object
+        while (obj) {
+          if (obj.name && isI(obj.name)) { foundName = obj.name; break }
+          obj = obj.parent
+        }
       }
-    })
-    hoveredRef.current = { root, saved }
-  }
-
-  function restoreHover() {
-    const cur = hoveredRef.current
-    if (!cur) return
-    for (const [m, s] of cur.saved) {
-      m.emissive.copy(s.emissive)
-      m.emissiveIntensity = s.intensity
+      if (foundName !== hoveredNameRef.current) {
+        hoveredNameRef.current = foundName
+        document.body.style.cursor = foundName ? 'pointer' : ''
+        const glowCount = glowsRef.current.length
+        const inReg = foundName ? glowsRef.current.some((g) => g.name === foundName) : false
+        console.log('[Room][hover]', foundName ?? '(none)', 'inRegistry=', inReg, 'registrySize=', glowCount)
+      }
     }
-    hoveredRef.current = null
-  }
-
-  const handlePointerMove = (e: ThreeEvent<PointerEvent>) => {
-    const root = findInteractiveAncestor(e.object, isInteractive)
-    if (!root) {
-      if (hoveredRef.current) {
-        restoreHover()
+    const onLeave = () => {
+      if (hoveredNameRef.current !== null) {
+        hoveredNameRef.current = null
         document.body.style.cursor = ''
       }
-      return
     }
-    if (hoveredRef.current?.root === root) return
-    if (hoveredRef.current) restoreHover()
-    applyHover(root)
-    document.body.style.cursor = 'pointer'
-  }
-
-  const handlePointerOut = () => {
-    if (hoveredRef.current) {
-      restoreHover()
-      document.body.style.cursor = ''
+    canvas.addEventListener('pointerdown', onDown)
+    canvas.addEventListener('pointermove', onMove)
+    canvas.addEventListener('pointerleave', onLeave)
+    return () => {
+      canvas.removeEventListener('pointerdown', onDown)
+      canvas.removeEventListener('pointermove', onMove)
+      canvas.removeEventListener('pointerleave', onLeave)
     }
-  }
+  }, [camera, modelPath])
 
-  return (
-    <primitive
-      object={scene}
-      onPointerMove={handlePointerMove}
-      onPointerOut={handlePointerOut}
-    />
-  )
+  return <primitive object={scene} />
 }
 
-export default function Room({ modelPath, onObjectClick, isInteractive, disableControls }: RoomProps) {
+export default function Room({ modelPath, onObjectClick, isInteractive, isItem, isUsed, disableControls }: RoomProps) {
   return (
     <Canvas
       camera={{ position: [0, 1.5, 4], fov: 50 }}
@@ -486,6 +569,8 @@ export default function Room({ modelPath, onObjectClick, isInteractive, disableC
           modelPath={modelPath}
           onObjectClick={onObjectClick}
           isInteractive={isInteractive}
+          isItem={isItem}
+          isUsed={isUsed}
         />
       </Suspense>
       {!disableControls && (
