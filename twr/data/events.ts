@@ -500,6 +500,22 @@ export const ITEMS: ItemSchema[] = [
       },
     ],
   },
+  {
+    itemId: 'banquet chair WITH COVER',
+    room: 3,
+    kind: 'regular',
+    events: [
+      {
+        text: "Chairs and tables, set for a banquet. What's the atmosphere of this spot?",
+        choices: [
+          { label: 'Fully occupied. No seat for me. I stand.',                  tag: 'AV', defenses: [] },
+          { label: 'One seat is empty. Someone is sitting right next to it.',   tag: 'AD', defenses: [] },
+          { label: "Completely empty. It's hard to choose where to sit.",       tag: 'CG', defenses: [] },
+          { label: 'The seats are assigned. Where is mine?',                    tag: 'SP', defenses: [] },
+        ],
+      },
+    ],
+  },
 
   // ─── Room 4 — 엘리베이터 ───────────────────────────────────
   // 5개 포스터: 클릭 자체가 곧 선택. 각 1-event 1-choice.
@@ -771,6 +787,24 @@ export const ITEMS: ItemSchema[] = [
           { label: "My body shifts a little. But I don't get up yet.",            tag: 'AV', defenses: [] },
           { label: "Stay seated. I could leave, but I don't.",                    tag: 'AV', defenses: [] },
           { label: "Wait for the other to disappear. I won't be the one to leave first.", tag: 'SP', defenses: [] },
+        ],
+      },
+    ],
+  },
+  {
+    itemId: 'statue',
+    room: 5,
+    kind: 'regular',
+    events: [
+      {
+        text:
+          'A statue of a kissing couple. Up close — their faces are slightly apart.\n' +
+          'Just before the kiss, or just after. It is unclear.',
+        choices: [
+          { label: 'Just before. The moment of drawing closer.',  tag: 'AD', defenses: [] },
+          { label: 'Just after. The moment of drawing apart.',    tag: 'AV', defenses: [] },
+          { label: 'They are frozen. Held in place.',             tag: 'CG', defenses: [] },
+          { label: "I can't tell. I look somewhere else.",        tag: 'AV', defenses: [] },
         ],
       },
     ],
