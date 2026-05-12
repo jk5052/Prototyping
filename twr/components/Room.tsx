@@ -68,15 +68,20 @@ const HIDDEN_MESH_PATTERNS: Record<string, string[]> = {
   '/models/finalroom.glb': ['beginning vignette', 'beginning_vignette', 'vignette'],
 }
 
-// 방별 light intensity 부스트. R1~R5 는 dim cm-scale 이라 decay=0 + 12× boost 가 적정.
-// 흰 Void(finalroom) 은 인테리어가 밝은 톤이라 GLB 원본 라이트 그대로 두면 화면이
-// 하얗게 번져 위에 깔린 흰 텍스트가 안 보임 → 0.15× 로 dim 처리해 어두운 룸 톤 유지.
+// 방별 light intensity 부스트. cm-scale dim 룸은 decay=0 + n× boost.
+// 룸 무드를 시각적으로 더 어둡고 cozy 하게 잡기 위해 boost 를 룸별로 잘게 튜닝.
+// 이전 default 12× 는 발표 톤에 비해 너무 밝아서 모든 룸이 평평한 형광등 느낌이었음.
+// 흰 Void(finalroom) 은 인테리어가 밝아 0.15× 로 dim 유지.
 type LightBoost = { spot: number; point: number; directional: number; decayZero: boolean }
-const DEFAULT_LIGHT_BOOST: LightBoost = { spot: 12, point: 3, directional: 0.4, decayZero: true }
+const DEFAULT_LIGHT_BOOST: LightBoost = { spot: 6, point: 1.5, directional: 0.25, decayZero: true }
 const LIGHT_BOOST: Record<string, LightBoost> = {
   '/models/finalroom.glb': { spot: 0.15, point: 0.15, directional: 0.15, decayZero: false },
-  // R2: cabinet/벽지가 너무 밝게 나와서 default 의 절반으로 dim.
-  '/models/r2.glb':        { spot: 6,    point: 1.5,  directional: 0.2,  decayZero: true  },
+  // R1: cozy 거실 — 캔들/스탠드 톤. 강한 천장등 인상 피하기.
+  '/models/r1.glb':        { spot: 5,    point: 1.2,  directional: 0.3,  decayZero: true  },
+  // R2: 어두운 복도. mirror/cabinet/벽지 반사로 쉽게 밝아져 더 낮춘다.
+  '/models/r2.glb':        { spot: 3,    point: 0.8,  directional: 0.15, decayZero: true  },
+  // R3: 무대/시상식. dim 한 극장 톤, microphone red light 강조.
+  '/models/r3.glb':        { spot: 4,    point: 1,    directional: 0.2,  decayZero: true  },
 }
 
 // GLB 안의 named 카메라가 transform 이상해서 (0.01 scale 등) raycast 가 빈 공간 향할 때
