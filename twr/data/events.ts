@@ -41,6 +41,64 @@ export interface ItemSchema {
   oneTimeOnly?: boolean                   // R4 doors 등 — 첫 chain 종료 후 잠금
 }
 
+// R4 공통 chain — 포스터 5개 + 엘리베이터 본체가 동일하게 참조한다.
+// 포스터 클릭 시 자기 intro event 1개 → 이 chain → next-room 버튼 노출.
+const ELEVATOR_CHAIN_EVENTS: ObjectEvent[] = [
+  {
+    text: 'I stand in front of the elevator. Press the button. No response.',
+    choices: [
+      { label: 'Press it again.',                                                       tag: 'EX', defenses: [] },
+      { label: 'Wait a moment.',                                                        tag: 'AD', defenses: [] },
+      { label: 'Look for another elevator.',                                            tag: 'AV', defenses: [] },
+      { label: "There's an 'Out of Order' sign next to it. Press it one more time anyway.", tag: 'SP', defenses: [] },
+    ],
+  },
+  {
+    text:
+      'Finally the elevator opens! But behind the doors are three more doors..?\n' +
+      '🚪 A: The sound of people laughing.\n🚪 B: Silence. Only the occasional bird call.\n🚪 C: Someone is playing piano. The melody is sad.\nWhich door will you open?',
+    choices: [
+      { label: 'A: The sound of people laughing.',     tag: 'EX', defenses: [], postNarration: '...there are people, but they go quiet when I step in.' },
+      { label: 'B: Silence. Only the occasional bird call.', tag: 'AV', defenses: [], postNarration: '...the room is empty, but my photo hangs on the wall.' },
+      { label: 'C: The sad piano melody.',             tag: 'SP', defenses: [], postNarration: "...there's a piano, but no one is playing. The keys move on their own." },
+    ],
+  },
+  {
+    text: 'Will you stay in this room, or open another door?',
+    choices: [
+      { label: 'Stay.',              tag: 'AD', defenses: [] },
+      { label: 'Open another door.', tag: 'AV', defenses: [] },
+    ],
+  },
+  {
+    text: "The door opens and finally the elevator interior appears. Whew.. I'm finally on the elevator.\nBut... I'm not alone? There are people. The other passengers glance at each other.",
+    choices: [
+      { label: 'Look for the emergency button. Where it is.', tag: 'SP', defenses: [] },
+      { label: 'Watch the others. Read their faces.',         tag: 'EX', defenses: [] },
+      { label: "Just stand still. It'll start moving soon.",  tag: 'AV', defenses: [] },
+      { label: "Pull out my phone. See if there's a signal.", tag: 'AV', defenses: [] },
+    ],
+  },
+  {
+    text: 'The elevator, which seemed to be going up, suddenly thudded to a stop! An announcement begins.\nWe will now play a game. That game is..',
+    choices: [
+      { label: 'Rock-paper-scissors.',                          tag: 'AD', defenses: [] },
+      { label: 'Everyone sing together. Each takes a verse.',   tag: 'EX', defenses: [] },
+      { label: 'Pick a random game.',                            tag: 'CG', defenses: [] },
+      { label: "Ignore it.. I'd rather be alone.",              tag: 'AV', defenses: [] },
+    ],
+  },
+  {
+    text: 'The game is over! The elevator finally seems to be moving up.\nAs I step out, one of the others hands me something.',
+    choices: [
+      { label: 'An envelope. Light.',                              tag: 'CG', defenses: [] },
+      { label: 'A small box. Heavy.',                              tag: 'EX', defenses: [] },
+      { label: "A single sheet of paper. Hard to read what it says.", tag: 'SP', defenses: [] },
+      { label: "They open their palm to show me — there's nothing.", tag: 'AV', defenses: [] },
+    ],
+  },
+]
+
 // defenses 배열은 룸 spec 일괄 수집 후 Claude로 자동 라벨링 예정.
 export const ITEMS: ItemSchema[] = [
   // ─── Room 1 ───────────────────────────────────────────────
@@ -518,7 +576,8 @@ export const ITEMS: ItemSchema[] = [
   },
 
   // ─── Room 4 — 엘리베이터 ───────────────────────────────────
-  // 5개 포스터: 클릭 자체가 곧 선택. 각 1-event 1-choice.
+  // 포스터 5개 = 진입점. 클릭 시 자기 intro 1개 + 공통 ELEVATOR_CHAIN_EVENTS 가 이어짐.
+  // ELEVATOR_CHAIN_EVENTS 정의는 본 파일 하단에 const 로 두고 spread 로 합친다.
   {
     itemId: 'poster_art',
     room: 4,
@@ -530,6 +589,7 @@ export const ITEMS: ItemSchema[] = [
           { label: 'Take this elevator.', tag: 'AD', defenses: [], postNarration: '...I step toward the elevator.' },
         ],
       },
+      ...ELEVATOR_CHAIN_EVENTS,
     ],
   },
   {
@@ -543,6 +603,7 @@ export const ITEMS: ItemSchema[] = [
           { label: 'Take this elevator.', tag: 'AD', defenses: [], postNarration: '...I step toward the elevator.' },
         ],
       },
+      ...ELEVATOR_CHAIN_EVENTS,
     ],
   },
   {
@@ -556,6 +617,7 @@ export const ITEMS: ItemSchema[] = [
           { label: 'Take this elevator.', tag: 'CG', defenses: [], postNarration: '...I step toward the elevator.' },
         ],
       },
+      ...ELEVATOR_CHAIN_EVENTS,
     ],
   },
   {
@@ -569,6 +631,7 @@ export const ITEMS: ItemSchema[] = [
           { label: 'Take this elevator.', tag: 'AV', defenses: [], postNarration: '...I step toward the elevator.' },
         ],
       },
+      ...ELEVATOR_CHAIN_EVENTS,
     ],
   },
   {
@@ -582,83 +645,15 @@ export const ITEMS: ItemSchema[] = [
           { label: 'Take this elevator.', tag: 'EX', defenses: [], postNarration: '...I step toward the elevator.' },
         ],
       },
+      ...ELEVATOR_CHAIN_EVENTS,
     ],
   },
-  // 엘리베이터 본체: 버튼 → 3-doors → 머물기/이동 → 승객 → 멈춤 게임 → 작별 선물
+  // 엘리베이터 본체: 포스터 안 거치고 바로 클릭한 경우에도 동일 chain 진행.
   {
     itemId: 'modern_apartment_elevator',
     room: 4,
     kind: 'regular',
-    events: [
-      {
-        text: 'I stand in front of the elevator. Press the button. No response.',
-        choices: [
-          { label: 'Press it again.',                                                       tag: 'EX', defenses: [] },
-          { label: 'Wait a moment.',                                                        tag: 'AD', defenses: [] },
-          { label: 'Look for another elevator.',                                            tag: 'AV', defenses: [] },
-          { label: "There's an 'Out of Order' sign next to it. Press it one more time anyway.", tag: 'SP', defenses: [] },
-        ],
-      },
-      {
-        text:
-          'Finally the elevator opens! But behind the doors are three more doors..?\n' +
-          '🚪 A: The sound of people laughing.\n🚪 B: Silence. Only the occasional bird call.\n🚪 C: Someone is playing piano. The melody is sad.\nWhich door will you open?',
-        choices: [
-          {
-            label: 'A: The sound of people laughing.',
-            tag: 'EX',
-            defenses: [],
-            postNarration: '...there are people, but they go quiet when I step in.',
-          },
-          {
-            label: 'B: Silence. Only the occasional bird call.',
-            tag: 'AV',
-            defenses: [],
-            postNarration: '...the room is empty, but my photo hangs on the wall.',
-          },
-          {
-            label: 'C: The sad piano melody.',
-            tag: 'SP',
-            defenses: [],
-            postNarration: "...there's a piano, but no one is playing. The keys move on their own.",
-          },
-        ],
-      },
-      {
-        text: 'Will you stay in this room, or open another door?',
-        choices: [
-          { label: 'Stay.',              tag: 'AD', defenses: [] },
-          { label: 'Open another door.', tag: 'AV', defenses: [] },
-        ],
-      },
-      {
-        text: "The door opens and finally the elevator interior appears. Whew.. I'm finally on the elevator.\nBut... I'm not alone? There are people. The other passengers glance at each other.",
-        choices: [
-          { label: 'Look for the emergency button. Where it is.', tag: 'SP', defenses: [] },
-          { label: 'Watch the others. Read their faces.',         tag: 'EX', defenses: [] },
-          { label: "Just stand still. It'll start moving soon.",  tag: 'AV', defenses: [] },
-          { label: "Pull out my phone. See if there's a signal.", tag: 'AV', defenses: [] },
-        ],
-      },
-      {
-        text: 'The elevator, which seemed to be going up, suddenly thudded to a stop! An announcement begins.\nWe will now play a game. That game is..',
-        choices: [
-          { label: 'Rock-paper-scissors.',                          tag: 'AD', defenses: [] },
-          { label: 'Everyone sing together. Each takes a verse.',   tag: 'EX', defenses: [] },
-          { label: 'Pick a random game.',                            tag: 'CG', defenses: [] },
-          { label: "Ignore it.. I'd rather be alone.",              tag: 'AV', defenses: [] },
-        ],
-      },
-      {
-        text: 'The game is over! The elevator finally seems to be moving up.\nAs I step out, one of the others hands me something.',
-        choices: [
-          { label: 'An envelope. Light.',                              tag: 'CG', defenses: [] },
-          { label: 'A small box. Heavy.',                              tag: 'EX', defenses: [] },
-          { label: "A single sheet of paper. Hard to read what it says.", tag: 'SP', defenses: [] },
-          { label: "They open their palm to show me — there's nothing.", tag: 'AV', defenses: [] },
-        ],
-      },
-    ],
+    events: [...ELEVATOR_CHAIN_EVENTS],
   },
 
   // ─── Room 5 — 마지막 방 ───────────────────────────────────
@@ -787,24 +782,6 @@ export const ITEMS: ItemSchema[] = [
           { label: "My body shifts a little. But I don't get up yet.",            tag: 'AV', defenses: [] },
           { label: "Stay seated. I could leave, but I don't.",                    tag: 'AV', defenses: [] },
           { label: "Wait for the other to disappear. I won't be the one to leave first.", tag: 'SP', defenses: [] },
-        ],
-      },
-    ],
-  },
-  {
-    itemId: 'statue',
-    room: 5,
-    kind: 'regular',
-    events: [
-      {
-        text:
-          'A statue of a kissing couple. Up close — their faces are slightly apart.\n' +
-          'Just before the kiss, or just after. It is unclear.',
-        choices: [
-          { label: 'Just before. The moment of drawing closer.',  tag: 'AD', defenses: [] },
-          { label: 'Just after. The moment of drawing apart.',    tag: 'AV', defenses: [] },
-          { label: 'They are frozen. Held in place.',             tag: 'CG', defenses: [] },
-          { label: "I can't tell. I look somewhere else.",        tag: 'AV', defenses: [] },
         ],
       },
     ],
