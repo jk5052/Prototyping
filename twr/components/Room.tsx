@@ -52,16 +52,6 @@ const CAMERA_OVERRIDES: Record<string, { pos: readonly [number, number, number];
     target: [13.30, -4.53, -17.74] as const,
     fov: 50,
   },
-  // R2: Spline 'Camera' 가 0.01 스케일로 decompose 돼 forward 가 0 벡터화 됨.
-  // 기존엔 FORCE_BBOX_FIT 로 대응했으나 door mesh 가 world (-30, 7, -168) 로
-  // INTERIOR_RADIUS=25 밖에 위치 → bbox-fit 의 inner 박스에서 제외돼 frustum 밖.
-  // 카메라는 원본 Spline 'Camera' 좌표 (-0.57, 14.77, 61.80) 그대로 두고 target 만
-  // door 방향 (-15, 6, -80) 으로 줘서 인테리어 + door 둘 다 화면 안에 들어오도록.
-  '/models/r2.glb': {
-    pos:    [-0.57, 14.77, 61.80] as const,
-    target: [-15.00, 6.00, -80.00] as const,
-    fov: 65,
-  },
   // R5: 'Camera' (yfov 45°) frustum 이 좁아 statue (-15, -16, -12) 가 frustum
   // 아래로 -27°, Door (16, -16, -11.5) 가 +37° 가로로 빠져 둘 다 화면 밖.
   // 카메라를 살짝 뒤 + 위로 빼고 시야각 넓혀서 statue 가운데, Door 우측 살짝 걸침.

@@ -213,8 +213,14 @@ export default function Home() {
               })
               // choice마다 오라클 단어 3개 누적 — 우상단 패널에 append
               addOracleWords(pickOracleWords(3))
-              if (ended) setChain(null)
-              else setChain({ ...chain, index: chain.index + 1 })
+              if (ended) {
+                setChain(null)
+                // R4 는 exit door mesh 가 없고 5 포스터/엘리베이터 chain 이 그 자체로
+                // 출구 — chain 종료 시 자동으로 JournalingOverlay(단어 픽) 진입.
+                if (roomNumber === 4) {
+                  setJournaling({ from: 4, to: 5 })
+                }
+              } else setChain({ ...chain, index: chain.index + 1 })
             }}
             onCancel={() => {
               addCancellation(roomNumber)
