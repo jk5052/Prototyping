@@ -408,8 +408,10 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed }: Room
       })
     }
     glowsRef.current = glows
+    // 전체 root 이름을 dump — sample 6 으로 자르면 statue 처럼 뒤쪽 아이템이 누락된 듯
+    // 보일 수 있어서 디버그 중에는 전체 출력.
     console.log('[Room] glow registry', modelPath, 'roots=', glows.length,
-      'sample=', glows.slice(0, 6).map((g) => `${g.name}(${g.mats.length})`))
+      'all=', glows.map((g) => `${g.name}(${g.mats.length})`))
     return () => {
       for (const g of glowsRef.current) {
         for (const m of g.mats) {
@@ -508,9 +510,13 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed }: Room
       const hits = ray.intersectObjects(meshes, false)
       const isI = isInteractiveRef.current
       let foundName: string | null = null
+      // 첫 hit 의 부모 chain 을 수집 — 어떤 ancestor 도 interactive 아닐 때
+      // 어디까지 mesh 가 잡혔는지 추적용. (디버그 한정.)
+      let firstHitChain: string[] = []
       if (hits.length) {
         let obj: THREE.Object3D | null = hits[0].object
         while (obj) {
+          if (obj.name) firstHitChain.push(obj.name)
           if (obj.name && isI(obj.name)) { foundName = obj.name; break }
           obj = obj.parent
         }
@@ -520,7 +526,8 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed }: Room
         document.body.style.cursor = foundName ? 'pointer' : ''
         const glowCount = glowsRef.current.length
         const inReg = foundName ? glowsRef.current.some((g) => g.name === foundName) : false
-        console.log('[Room][hover]', foundName ?? '(none)', 'inRegistry=', inReg, 'registrySize=', glowCount)
+        console.log('[Room][hover]', foundName ?? '(none)', 'inRegistry=', inReg, 'registrySize=', glowCount,
+          'hitChain=', firstHitChain.join(' < '))
       }
     }
     const onLeave = () => {
