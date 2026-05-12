@@ -52,6 +52,24 @@ const CAMERA_OVERRIDES: Record<string, { pos: readonly [number, number, number];
     target: [13.30, -4.53, -17.74] as const,
     fov: 50,
   },
+  // R2: Spline 'Camera' 가 0.01 스케일로 decompose 돼 forward 가 0 벡터화 됨.
+  // 기존엔 FORCE_BBOX_FIT 로 대응했으나 door mesh 가 world (-30, 7, -168) 로
+  // INTERIOR_RADIUS=25 밖에 위치 → bbox-fit 의 inner 박스에서 제외돼 frustum 밖.
+  // 카메라는 원본 Spline 'Camera' 좌표 (-0.57, 14.77, 61.80) 그대로 두고 target 만
+  // door 방향 (-15, 6, -80) 으로 줘서 인테리어 + door 둘 다 화면 안에 들어오도록.
+  '/models/r2.glb': {
+    pos:    [-0.57, 14.77, 61.80] as const,
+    target: [-15.00, 6.00, -80.00] as const,
+    fov: 65,
+  },
+  // R5: 'Camera' (yfov 45°) frustum 이 좁아 statue (-15, -16, -12) 가 frustum
+  // 아래로 -27°, Door (16, -16, -11.5) 가 +37° 가로로 빠져 둘 다 화면 밖.
+  // 카메라를 살짝 뒤 + 위로 빼고 시야각 넓혀서 statue 가운데, Door 우측 살짝 걸침.
+  '/models/r5.glb': {
+    pos:    [-2.00, -3.00, 18.00] as const,
+    target: [-2.00, -14.00, -12.00] as const,
+    fov: 60,
+  },
   // Final room: 4 export 카메라 모두 동일한 'Camera' 이름 + 0.01 스케일 + znear 70
   // 으로 오작동. 'beginning vignette' 가 카메라 바로 앞 1.5 단위에 오버레이로 깔려있어
   // 별도 hide 처리(HIDDEN_MESH_PATTERNS) 와 함께 명시 시점 사용.
@@ -487,12 +505,18 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed }: Room
       setNdc(ev)
       ray.setFromCamera(ndc, camera)
       const hits = ray.intersectObjects(meshes, false)
-      if (!hits.length) return
+      if (!hits.length) { console.log('[Room][click] no hit'); return }
       let obj: THREE.Object3D | null = hits[0].object
       const isI = isInteractiveRef.current
       const onClick = onObjectClickRef.current
+      const chain: string[] = []
+      const checks: string[] = []
       while (obj) {
+        if (obj.name) chain.push(obj.name)
+        if (obj.name) checks.push(`${obj.name}=${isI(obj.name)}`)
         if (obj.name && isI(obj.name)) {
+          console.log('[Room][click] hit=', hits[0].object.name, 'matched=', obj.name,
+            'chain=', chain.join(' < '))
           // click pulse 시작 — useFrame 이 PULSE_DUR 동안 flash + scale 처리.
           const g = glowsRef.current.find((e) => e.root === obj)
           if (g) g.pulseStart = performance.now()
@@ -501,6 +525,8 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed }: Room
         }
         obj = obj.parent
       }
+      console.log('[Room][click] missed hit=', hits[0].object.name,
+        'chain=', chain.join(' < '), 'checks=', checks.join(','))
     }
     const onMove = (ev: PointerEvent) => {
       const meshes = meshesRef.current
