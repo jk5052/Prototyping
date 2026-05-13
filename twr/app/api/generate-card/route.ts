@@ -65,20 +65,25 @@ export async function POST(request: Request) {
     .filter((w) => typeof w === 'string' && w.trim())
     .slice(0, 4)
 
-  // 1) prompt build — tarot-card aesthetic: black silhouette / ink illustration
-  // on warm ivory paper. single symbolic object, no faces, no text.
+  // 1) prompt build — Edward Gorey "Fantod Pack" oracle aesthetic: fine
+  // crosshatched pen-and-ink on aged cream paper, edge-to-edge so no white
+  // rectangle is visible against the card's cream frame in the PDF.
+  // Text/caption bans are stated first so Flux gives them more weight.
   const lines: string[] = [
-    `tarot-style talisman card illustration of a single symbolic object: ${framing.image_seed}`,
+    'absolutely no text, no captions, no labels, no titles, no nameplates, no inscriptions, no letters, no numerals, no logos, no watermarks,',
+    'no pure white background, no clean studio backdrop, no rectangular inner frame, no inner border, no margin band of different color around the illustration,',
+    `Edward Gorey-style vintage oracle card illustration: ${framing.image_seed}`,
     `quiet meaning: ${framing.framing_en}`,
   ]
   if (blank)         lines.push(`woven element: "${blank.slice(0, 120)}"`)
   if (words.length)  lines.push(`atmospheric anchors: ${words.map((w) => `"${w}"`).join(', ')}`)
   lines.push(
-    'style: solid black silhouette and fine ink linework on a clean off-white ivory paper background,',
-    'centered composition, generous negative space, subtle paper grain, vintage tarot card feel,',
-    'flat 2D vector-like shapes, high contrast, two-tone (black on ivory) with optional muted sepia accent only,',
-    'no humans, no faces, no figures, no text, no letters, no numerals, no logos, no threatening imagery,',
-    'dignified, quiet, contemplative mood',
+    'style: fine pen-and-ink crosshatching and stippling, solid black linework, vintage oracle deck in the spirit of the Fantod Pack,',
+    'single symbolic object, centered, dignified composition, generous negative space,',
+    'background is aged warm cream paper (#f4ede1) with subtle mottling, faint foxing, soft paper grain;',
+    'the cream paper texture fills the entire frame from edge to edge — corners and edges are the same warm cream tone, no lighter rectangle or border,',
+    'no humans, no faces, no figures, no threatening imagery,',
+    'quiet, mysterious, warm, contemplative, slightly antique mood',
   )
   const promptUsed = lines.join('\n')
 

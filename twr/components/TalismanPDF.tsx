@@ -52,7 +52,7 @@ const styles = StyleSheet.create({
   oracleImageBox: {
     width: '100%',
     height: 190,
-    backgroundColor: '#ffffff',
+    backgroundColor: PAPER,
     alignItems: 'center',
     justifyContent: 'center',
   },
