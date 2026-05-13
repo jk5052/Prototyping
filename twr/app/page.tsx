@@ -1,6 +1,6 @@
 'use client'
 import Spline from '@splinetool/react-spline'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useGameStore } from '@/stores/gameStore'
 import {
   ITEMS,
@@ -332,18 +332,13 @@ export default function Home() {
   }
 
   // Void — finalroom 배경 위에서 LLM 대화 (영어, 무명 voice).
-  // 배경은 Spline viewer (full runtime) — GLB export 가 라이팅/애니메이션을
-  // 빼버려서 GLB 직접 로드 대신 viewer URL 을 쓰면 Spline editor 와 동일하게
-  // 렌더됨. 인터랙티브 hook 은 필요 없음 (배경 전용).
+  // conversation 진입 시 subvideo.mp4 가 1회 재생되며 NPC 등장을 establish
+  // 한 뒤 마지막 프레임에서 정지. VoidDialogue 는 video 종료 직후 fade-in.
+  // flow: R5 → conversation(LLM) → sealing(3 lines) → letter → card.
+  // 구 blank_fill phase 는 sealing 에 흡수 — SealingOverlay 가 첫 답변을
+  // /api/blank-fill 로 mirror 하여 downstream embedding 파이프라인 유지.
   if (phase === 'conversation') {
-    return (
-      <FinalSceneShell>
-        {/* flow: R5 → conversation(LLM) → sealing(3 lines) → letter → card.
-            구 blank_fill phase 는 sealing 에 흡수 — SealingOverlay 가 첫 답변을
-            /api/blank-fill 로 mirror 하여 downstream embedding 파이프라인 유지. */}
-        <VoidDialogue onComplete={() => setPhase('sealing')} />
-      </FinalSceneShell>
-    )
+    return <ConversationScene onComplete={() => setPhase('sealing')} />
   }
 
   // Sealing ritual — finalroom 배경 위에서 LLM 대화 직후 3개 짧은 문장.
@@ -418,6 +413,49 @@ function FinalSceneShell({ children }: { children: React.ReactNode }) {
         className="absolute inset-0 w-full h-full object-cover"
       />
       {children}
+    </div>
+  )
+}
+
+// Conversation 진입용 인트로 비디오 (/subvideo.mp4). 1회 재생 후 마지막 프레임에
+// 정지 → 그 위에 VoidDialogue 가 fade-in. 클릭 시 즉시 스킵. loop 없음.
+// 종료 후 video 는 pause() 로 명시 정지하여 일부 브라우저의 play overlay 회피.
+function ConversationScene({ onComplete }: { onComplete: () => void }) {
+  const [introDone, setIntroDone] = useState(false)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+
+  const finishIntro = () => {
+    const v = videoRef.current
+    if (v) {
+      try { v.currentTime = Math.max(0, (v.duration || 0) - 0.05); v.pause() } catch { /* ignore */ }
+    }
+    setIntroDone(true)
+  }
+
+  return (
+    <div
+      className={`relative w-screen h-screen bg-black overflow-hidden ${introDone ? '' : 'cursor-pointer'}`}
+      onClick={() => { if (!introDone) finishIntro() }}
+    >
+      <video
+        ref={videoRef}
+        src="/subvideo.mp4"
+        autoPlay
+        muted
+        playsInline
+        onEnded={finishIntro}
+        className="absolute inset-0 w-full h-full object-cover"
+      />
+      {!introDone && (
+        <p className="absolute bottom-6 right-6 text-white/30 text-[10px] tracking-[0.3em] uppercase pointer-events-none">
+          click to skip
+        </p>
+      )}
+      {introDone && (
+        <div className="absolute inset-0 animate-[fadeIn_900ms_ease-out]">
+          <VoidDialogue onComplete={onComplete} />
+        </div>
+      )}
     </div>
   )
 }
