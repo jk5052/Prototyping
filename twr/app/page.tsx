@@ -9,7 +9,7 @@ import {
   ROOM_INTROS,
   ROOM_ENTRY_EVENTS,
   ENTRY_ITEM_ID,
-  FINAL_SPLINE_SCENE,
+  FINAL_SCENE_VIDEO,
   type ObjectEvent,
 } from '@/data/events'
 import { useIdleTracker } from '@/lib/useIdleTracker'
@@ -402,13 +402,21 @@ export default function Home() {
   return null
 }
 
-// finalroom 5 phase 공통 셸 — Spline viewer 배경 + Spline 워터마크 가림.
-// landing 과 동일 패턴 (`bottom-right` 검정 박스).
+// finalroom 5 phase 공통 셸 — 미리 export 한 MP4 loop 를 배경으로. 동적 3D
+// (Spline runtime / GLB) 대신 video 를 쓰는 이유는 고정된 NPC 와 같은 자리에
+// 머무는 감각이 필요하기 때문. autoPlay+muted+loop+playsInline 으로 iOS 포함
+// 자동 재생. object-cover 로 종횡비 보정.
 function FinalSceneShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative w-screen h-screen bg-black overflow-hidden">
-      <Spline scene={FINAL_SPLINE_SCENE} />
-      <div className="absolute bottom-0 right-0 w-40 h-12 bg-black z-50 pointer-events-none" />
+      <video
+        src={FINAL_SCENE_VIDEO}
+        autoPlay
+        muted
+        loop
+        playsInline
+        className="absolute inset-0 w-full h-full object-cover"
+      />
       {children}
     </div>
   )

@@ -919,11 +919,10 @@ export const ROOM_MODELS: Record<number, string> = {
 }
 
 // 'conversation' / 'sealing' / 'letter*' / 'card' phase 의 백그라운드.
-// Spline viewer URL 을 사용 — Spline 의 GLB export 가 lighting/animation/post-FX
-// 를 빼버려서 GLB 직접 로드 시 어둡게 나옴. viewer 는 Spline editor 와 동일한
-// 풀 런타임이라 라이팅까지 그대로 보존. 인터랙티브 hook 은 없지만 finalroom 은
-// 배경 전용이라 무관.
-export const FINAL_SPLINE_SCENE = 'https://prod.spline.design/86Je24XH0llXc7tZ/scene.splinecode'
+// MP4 loop — 고정된 NPC 와 같은 장소에 머무는 감각을 위해 동적 3D 렌더
+// (Spline viewer, GLB) 대신 미리 export 한 video loop 를 사용. Spline editor
+// 에서 30s 정도 H.264 1920x1080 으로 export → /public/finalroom-loop.mp4.
+export const FINAL_SCENE_VIDEO = '/finalroom-loop.mp4'
 // 보존용 — GLB 파일은 그대로 두되 현재 렌더 경로에선 미사용 (fallback 가능성).
 export const FINAL_MODEL = '/models/finalroom.glb'
 
