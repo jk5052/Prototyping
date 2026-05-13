@@ -255,6 +255,13 @@ export default function Home() {
               } else setChain({ ...chain, index: chain.index + 1 })
             }}
             onCancel={() => {
+              // R4 한정: 포스터/엘리베이터 chain 은 한 번 시작하면 끝까지 진행해야
+              // 다음 방으로 넘어가는 단방향 동선. ESC / 배경 클릭으로 빠져나가지
+              // 못하게 onCancel 무시. (다른 방은 종전대로 cancel 허용.)
+              if (
+                roomNumber === 4 &&
+                (chain.itemId.startsWith('poster_') || chain.itemId === 'modern_apartment_elevator')
+              ) return
               addCancellation(roomNumber)
               setChain(null)
               setZoomTarget(null)

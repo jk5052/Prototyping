@@ -572,8 +572,8 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed, zoomTa
     // 카메라 줌 lerp — zoomTarget set 이면 target object center 로 접근, 아니면 base 로 복귀.
     // poster 처럼 평평한 mesh 는 bbox 의 가장 짧은 축이 법선이라고 가정하기보단, base
     // camera→center 방향을 따라 distance 만 줄여 접근하는 방식이 안전 (항상 카메라
-    // 시점이 유지되는 면을 마주봄). distance = max(size*0.55, 0.6) 정도면 포스터가
-    // 화면의 대부분을 차지.
+    // 시점이 유지되는 면을 마주봄). 너무 가까이 붙으면 포스터가 화면을 통째로 채워
+    // 부담스러우므로 distance·FOV 모두 보수적으로.
     const base = baseCamRef.current
     if (base) {
       const target = zoomTargetRef.current
@@ -587,11 +587,11 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed, zoomTa
           const center = _zoomTmpBox.current.getCenter(_zoomTmpCenter.current)
           const sz = _zoomTmpBox.current.getSize(new THREE.Vector3()).length()
           const dir = _zoomTmpDir.current.subVectors(center, base.pos).normalize()
-          const dist = Math.max(sz * 0.55, 0.6)
+          const dist = Math.max(sz * 0.95, 1.4)
           tgtPos = _zoomTmpPos.current.copy(center).addScaledVector(dir, -dist)
           const lookAt = _zoomTmpMat.current.lookAt(tgtPos, center, _zoomUp.current)
           tgtQuat = _zoomTmpQuat.current.setFromRotationMatrix(lookAt)
-          tgtFov = base.fov * 0.7
+          tgtFov = base.fov * 0.88
         }
       }
       const rate = 0.09
