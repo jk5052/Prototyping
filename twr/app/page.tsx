@@ -24,6 +24,7 @@ import CollectedWordsPanel from '@/components/CollectedWordsPanel'
 import JournalingOverlay from '@/components/JournalingOverlay'
 import VoidDialogue from '@/components/VoidDialogue'
 import LetterOverlay from '@/components/LetterOverlay'
+import LetterComposeOverlay from '@/components/LetterComposeOverlay'
 import SealingOverlay from '@/components/SealingOverlay'
 import CardOverlay from '@/components/CardOverlay'
 
@@ -349,7 +350,8 @@ export default function Home() {
 
   // Sealing ritual — finalroom 배경 위에서 LLM 대화 직후 3개 짧은 문장.
   // VoidDialogue 종료 직후 진입. final_reflections 에 prompt_key 별 upsert + 첫 답변은
-  // blank_fill_responses 로 mirror 되어 downstream embedding 파이프라인을 유지. 완료 시 letter.
+  // blank_fill_responses 로 mirror 되어 downstream embedding 파이프라인을 유지.
+  // 완료 시 letter-compose 단계로 — 거기서 3답 중 하나를 골라 letter 본문을 쓴다.
   if (phase === 'sealing') {
     return (
       <div className="relative w-screen h-screen bg-black">
@@ -359,12 +361,29 @@ export default function Home() {
           isInteractive={() => false}
           disableControls
         />
-        <SealingOverlay onComplete={() => setPhase('letter')} />
+        <SealingOverlay onComplete={() => setPhase('letter-compose')} />
       </div>
     )
   }
 
-  // Letter exchange — 같은 finalroom 배경 위에서 도착한 편지 + 답장
+  // Letter compose — 3 sealing 답을 다시 보여주고 1개 픽 → memory prompt → 짧은 글
+  // 작성 → archive 공개 여부 결정. 그 다음 단계(letter)에서 매칭된 편지가 fade-in.
+  if (phase === 'letter-compose') {
+    return (
+      <div className="relative w-screen h-screen bg-black">
+        <Room
+          modelPath={FINAL_MODEL}
+          onObjectClick={() => {}}
+          isInteractive={() => false}
+          disableControls
+        />
+        <LetterComposeOverlay onComplete={() => setPhase('letter')} />
+      </div>
+    )
+  }
+
+  // Letter receive — 같은 finalroom 배경 위에서 매칭된 편지 1개를 표시만.
+  // 답장/share 결정은 letter-compose 에서 이미 끝났다.
   if (phase === 'letter') {
     return (
       <div className="relative w-screen h-screen bg-black">
