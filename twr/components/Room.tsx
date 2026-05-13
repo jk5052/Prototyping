@@ -79,6 +79,19 @@ const HIDDEN_MESH_PATTERNS: Record<string, string[]> = {
   '/models/finalroom.glb': ['beginning vignette', 'beginning_vignette', 'vignette'],
 }
 
+// R4 포스터 텍스처 swap. Spline GLB 내장 포스터 텍스처가 저해상도라 줌인 시 깨져 보임 →
+// public/assets/<itemId>.png 로 런타임 교체. root 이름은 events.ts itemId 와 1:1.
+// 적용 대상: 자식 mesh 중 원래 .map 이 있는 (이미지 plane 으로 추정되는) mesh 만.
+// frame/back 같이 solid color mesh 는 건드리지 않음.
+const POSTER_TEXTURE_MAP: Record<string, string> = {
+  poster_art:        '/assets/poster_art.png',
+  poster_comic:      '/assets/poster_comic.png',
+  poster_family:     '/assets/poster_family.png',
+  poster_psychology: '/assets/poster_psychology.png',
+  poster_relation:   '/assets/poster_relation.png',
+}
+const POSTER_TEXTURE_ROOMS = new Set(['/models/r4.glb'])
+
 // 방별 light intensity 부스트. cm-scale dim 룸은 decay=0 + n× boost.
 // 룸 무드를 시각적으로 더 어둡고 cozy 하게 잡기 위해 boost 를 룸별로 잘게 튜닝.
 // 이전 default 12× 는 발표 톤에 비해 너무 밝아서 모든 룸이 평평한 형광등 느낌이었음.
@@ -217,6 +230,47 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed, zoomTa
       }
     })
     meshesRef.current = meshes
+
+    // R4 한정: 포스터 root (poster_art 등) 의 자식 mesh 중 .map 을 가진 것을 찾아
+    // /public/assets/<itemId>.png 로 교체. flipY=false 는 glTF UV 컨벤션 (image
+    // 원점 좌상단), colorSpace=SRGB 는 PBR 라이팅과 톤매핑이 색을 올바르게 해석
+    // 하게 함. color 는 흰색으로 초기화해서 texture 가 mat.color 로 tint 되지 않게.
+    // 적용 후 needsUpdate=true 로 GPU 업로드 트리거. 매칭되는 mesh 가 없으면
+    // (Spline export 시 map 누락) 첫 번째 mesh 에 fallback 으로 적용.
+    if (POSTER_TEXTURE_ROOMS.has(modelPath)) {
+      const loader = new THREE.TextureLoader()
+      for (const [name, src] of Object.entries(POSTER_TEXTURE_MAP)) {
+        const root = scene.getObjectByName(name)
+        if (!root) { console.log('[Room] poster root not found:', name); continue }
+        const tex = loader.load(src)
+        tex.colorSpace = THREE.SRGBColorSpace
+        tex.flipY = false
+        tex.anisotropy = 8
+        let applied = 0
+        const fallbackMats: THREE.MeshStandardMaterial[] = []
+        root.traverse((c) => {
+          const mesh = c as THREE.Mesh
+          if (!mesh.isMesh) return
+          const ms = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+          for (const m of ms) {
+            if (!m) continue
+            const mm = m as THREE.MeshStandardMaterial
+            fallbackMats.push(mm)
+            if (!mm.map) continue
+            mm.map = tex
+            if (mm.color) mm.color.setHex(0xffffff)
+            mm.needsUpdate = true
+            applied++
+          }
+        })
+        if (applied === 0 && fallbackMats.length > 0) {
+          const mm = fallbackMats[0]
+          mm.map = tex
+          if (mm.color) mm.color.setHex(0xffffff)
+          mm.needsUpdate = true
+        }
+      }
+    }
 
     const ovr = CAMERA_OVERRIDES[modelPath]
     if (ovr) {
