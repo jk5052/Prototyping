@@ -27,7 +27,7 @@ interface RoomLog {
 }
 
 interface GameState {
-  phase: 'landing' | 'intro' | 'room1' | 'room2' | 'room3' | 'room4' | 'room5' | 'conversation' | 'blank_fill' | 'letter' | 'sealing' | 'card'
+  phase: 'landing' | 'intro' | 'room1' | 'room2' | 'room3' | 'room4' | 'room5' | 'sealing' | 'conversation' | 'letter' | 'card'
   choices: Choice[]
   tags: Record<Tag, number>
   roomLogs: Record<number, RoomLog>

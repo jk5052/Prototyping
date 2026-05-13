@@ -40,6 +40,10 @@ export default function SealingOverlay({ onComplete }: SealingOverlayProps) {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError]           = useState<string | null>(null)
   const fetchedRef = useRef(false)
+  // sealing 이 기존 blank_fill phase 를 흡수하면서, downstream find-poems/letter/
+  // card-bundle 이 의존하는 blank_fill_responses (answer_embedding + primary_defense)
+  // 도 채워야 함. 첫 번째 비-skip 답변을 /api/blank-fill 에 fire-and-forget POST.
+  const bfPostedRef = useRef(false)
 
   useEffect(() => {
     if (fetchedRef.current) return
@@ -80,6 +84,21 @@ export default function SealingOverlay({ onComplete }: SealingOverlayProps) {
           }),
         })
         if (!r.ok) { setError((await r.text()).slice(0, 200)); return }
+        // 첫 번째 실제 답변 1개만 blank_fill_responses 에도 mirror. 실패해도
+        // sealing flow 자체는 진행 — embedding 누락 시 downstream 이 409 로 안내.
+        if (!bfPostedRef.current) {
+          bfPostedRef.current = true
+          void fetch('/api/blank-fill', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              session_id:  getSessionId(),
+              player_id:   getPlayerId(),
+              template_id: current.template_id,
+              answer:      ans,
+            }),
+          }).catch(() => { /* swallow */ })
+        }
       }
       setStep((s) => s + 1)
       setAnswer('')

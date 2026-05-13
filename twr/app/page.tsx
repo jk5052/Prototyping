@@ -22,7 +22,6 @@ import RoomIntro from '@/components/RoomIntro'
 import CollectedWordsPanel from '@/components/CollectedWordsPanel'
 import JournalingOverlay from '@/components/JournalingOverlay'
 import VoidDialogue from '@/components/VoidDialogue'
-import BlankFillOverlay from '@/components/BlankFillOverlay'
 import LetterOverlay from '@/components/LetterOverlay'
 import SealingOverlay from '@/components/SealingOverlay'
 import CardOverlay from '@/components/CardOverlay'
@@ -281,23 +280,10 @@ export default function Home() {
           isInteractive={() => false}
           disableControls
         />
-        <VoidDialogue onComplete={() => setPhase('blank_fill')} />
-        {/* sealing → conversation → blank_fill → letter → card */}
-      </div>
-    )
-  }
-
-  // Blank fill — 같은 finalroom 배경 위에서 한 줄 빈칸 채우기
-  if (phase === 'blank_fill') {
-    return (
-      <div className="relative w-screen h-screen bg-black">
-        <Room
-          modelPath={FINAL_MODEL}
-          onObjectClick={() => {}}
-          isInteractive={() => false}
-          disableControls
-        />
-        <BlankFillOverlay onComplete={() => setPhase('letter')} />
+        {/* flow: R5 → sealing(3 lines) → conversation → letter → card.
+            구 blank_fill phase 는 sealing 에 흡수 — SealingOverlay 가 첫 답변을
+            /api/blank-fill 로 mirror 하여 downstream embedding 파이프라인 유지. */}
+        <VoidDialogue onComplete={() => setPhase('letter')} />
       </div>
     )
   }
