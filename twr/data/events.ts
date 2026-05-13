@@ -447,6 +447,27 @@ export const ITEMS: ItemSchema[] = [
     ],
   },
   {
+    // three.js GLTFLoader 의 PropertyBinding.sanitizeNodeName 가 공백을 _ 로 치환.
+    // GLB 안 이름은 'banquet chair WITH COVER' 지만 runtime scene 에선 underscores.
+    // DIAGNOSTIC: noGlow 로 glow registry 제외 → fit 단계의 red emissive override 가
+    // useFrame 에 덮어쓰이지 않고 유지되어 시각적 가시성 분리 확인 가능.
+    itemId: 'banquet_chair_WITH_COVER',
+    room: 3,
+    kind: 'regular',
+    noGlow: true,
+    events: [
+      {
+        text: "Event hall chairs and tables. What's the atmosphere here?",
+        choices: [
+          { label: 'Packed. No empty seats. I stand.',                        tag: 'AV', defenses: [] },
+          { label: 'One seat is open. Someone is sitting next to it.',        tag: 'EX', defenses: [] },
+          { label: 'Empty. Hard to decide where to sit.',                     tag: 'CG', defenses: [] },
+          { label: "Seats are assigned. Where's mine?",                       tag: 'AD', defenses: [] },
+        ],
+      },
+    ],
+  },
+  {
     itemId: 'tall_speaker_2',
     room: 3,
     kind: 'regular',
@@ -548,6 +569,7 @@ export const ITEMS: ItemSchema[] = [
     itemId: 'banquet_chair_WITH_COVER',
     room: 3,
     kind: 'regular',
+    noGlow: true,
     events: [
       {
         text: "Chairs and tables, set for a banquet. What's the atmosphere of this spot?",
