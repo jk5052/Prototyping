@@ -12,18 +12,20 @@ import { getSessionId, getPlayerId } from '@/lib/session'
 //   5. Player decides whether the letter enters the anonymous archive.
 //   6. onComplete → matched letter is fetched + displayed in LetterOverlay.
 //
-// Side effects per step:
-//   step 'select' → POST /api/blank-fill with the chosen template_id+answer.
-//     Overwrites blank_fill_responses so the match RPC keys on the picked
-//     anchor (not whichever answer happened to be first in SealingOverlay's
-//     mirror). This is what makes the player's *choice* shape the match.
-//   step 'write' → POST /api/letter (no reply) to create the exchange row
-//     under the refreshed embedding, then POST /api/letter again with
-//     reply_text = composed letter to persist the composed letter as the
-//     player's contribution. The reply_text column is reused for the new
-//     "player wrote first" semantics; share_player_letter RPC already
-//     copies it into seed_letters.letter_text when share=Yes.
-//   step 'share' → POST /api/share-letter with the chosen flag.
+// Side effects:
+//   step 'select' — no API call. The pick is held locally and only sent
+//     to the server when the player saves their composed letter.
+//     final_reflections and blank_fill_responses are NOT mutated by
+//     picking a sealing phrase here.
+//   step 'write'  — POST /api/compose-letter once with
+//     { selected_template_id, selected_answer, composed_letter }.
+//     The endpoint embeds the composed letter (3072d halfvec) and
+//     upserts letter_exchanges. The matched letter is NOT revealed
+//     here — that only happens in LetterOverlay via /api/letter.
+//   step 'share'  — POST /api/share-letter with { share }. share=false
+//     records the choice without inserting into seed_letters.
+//     share=true triggers share_player_letter RPC which copies the
+//     composed letter into the future matching pool.
 
 interface SealingAnswer {
   template_id: number
@@ -80,53 +82,28 @@ export default function LetterComposeOverlay({ onComplete }: LetterComposeOverla
     })()
   }, [onComplete])
 
-  async function pickAnswer(row: SealingAnswer) {
+  function pickAnswer(row: SealingAnswer) {
     if (busy) return
-    setBusy(true); setError(null)
-    try {
-      // re-mirror: 선택된 sealing 답을 매칭 키로 만들기 위해 blank_fill_responses
-      // 의 answer + embedding 을 갱신. 같은 session_id 라 upsert.
-      const r = await fetch('/api/blank-fill', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          session_id:  getSessionId(),
-          player_id:   getPlayerId(),
-          template_id: row.template_id,
-          answer:      row.answer_text,
-        }),
-      })
-      if (!r.ok) { setError((await r.text()).slice(0, 200)); return }
-      setPicked(row)
-      setStep('write')
-    } catch (e) {
-      setError(String(e).slice(0, 200))
-    } finally { setBusy(false) }
+    setPicked(row)
+    setStep('write')
   }
 
   async function saveLetter() {
-    if (busy || !letter.trim()) return
+    if (busy || !letter.trim() || !picked) return
     setBusy(true); setError(null)
     try {
-      // 1) match row 생성 (no reply_text) — idempotent. letter-receive 단계에서
-      //    재호출해도 같은 row 가 반환된다.
-      const r1 = await fetch('/api/letter', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ session_id: getSessionId(), player_id: getPlayerId() }),
-      })
-      if (!r1.ok) { setError((await r1.text()).slice(0, 200)); return }
-      // 2) composed letter 를 reply_text 컬럼에 저장 (column 재활용).
-      const r2 = await fetch('/api/letter', {
+      const r = await fetch('/api/compose-letter', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          session_id: getSessionId(),
-          player_id:  getPlayerId(),
-          reply_text: letter.trim(),
+          session_id:           getSessionId(),
+          player_id:            getPlayerId(),
+          selected_template_id: picked.template_id,
+          selected_answer:      picked.answer_text,
+          composed_letter:      letter.trim(),
         }),
       })
-      if (!r2.ok) { setError((await r2.text()).slice(0, 200)); return }
+      if (!r.ok) { setError((await r.text()).slice(0, 200)); return }
       setStep('share')
     } catch (e) {
       setError(String(e).slice(0, 200))

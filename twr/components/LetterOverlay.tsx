@@ -18,8 +18,6 @@ interface LetterRes {
   primary_defense:  string | null
   author_pseudonym: string | null
   source:           string
-  reply_text:       string | null
-  already_replied:  boolean
 }
 
 export default function LetterOverlay({ onComplete }: LetterOverlayProps) {
