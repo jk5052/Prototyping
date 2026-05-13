@@ -82,13 +82,14 @@ export async function POST(request: Request) {
   )
   const promptUsed = lines.join('\n')
 
-  // 2) Replicate 호출 (sync — Prefer: wait 로 결과 즉시 수신, 최대 60s)
+  // 2) Replicate 호출 (sync — Prefer: wait 로 결과 즉시 수신, 최대 60s).
+  // wait 가 만료되어 starting/processing 상태로 돌아오면 urls.get 을 polling.
   const replicateRes = await fetch(REPLICATE_URL, {
     method: 'POST',
     headers: {
       'authorization': `Bearer ${replicate}`,
       'content-type':  'application/json',
-      'prefer':        'wait',
+      'prefer':        'wait=30',
     },
     body: JSON.stringify({
       input: {
@@ -112,12 +113,36 @@ export async function POST(request: Request) {
     )
   }
 
-  const pred = await replicateRes.json() as {
-    id?: string; status?: string; output?: string[] | string; error?: string | null
+  type ReplicatePred = {
+    id?:     string
+    status?: string
+    output?: string[] | string
+    error?:  string | null
+    urls?:   { get?: string; cancel?: string }
   }
-  if (pred.status && pred.status !== 'succeeded') {
+  let pred = await replicateRes.json() as ReplicatePred
+
+  // Cold start fallback — Prefer:wait 가 starting/processing 으로 끊긴 경우
+  // route maxDuration 한도 안에서 짧은 간격으로 GET 폴링.
+  if (pred.status && pred.status !== 'succeeded' && pred.status !== 'failed' && pred.status !== 'canceled') {
+    const getUrl = pred.urls?.get
+    if (getUrl) {
+      const deadline = Date.now() + 25_000     // wait=30 후 남은 maxDuration(60s) 내 폴링
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 1500))
+        const pollRes = await fetch(getUrl, {
+          headers: { 'authorization': `Bearer ${replicate}` },
+        })
+        if (!pollRes.ok) break
+        pred = await pollRes.json() as ReplicatePred
+        if (pred.status === 'succeeded' || pred.status === 'failed' || pred.status === 'canceled') break
+      }
+    }
+  }
+
+  if (pred.status !== 'succeeded') {
     return Response.json(
-      { error: 'replicate not succeeded', status: pred.status, detail: pred.error ?? null },
+      { error: 'replicate not succeeded', status: pred.status ?? 'unknown', detail: pred.error ?? null },
       { status: 502 },
     )
   }
