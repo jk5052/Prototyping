@@ -4,6 +4,7 @@
 // 그대로 반환.
 import codebook from '@/dataset/processed/defense_codebook.json'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { stripLoneSurrogates, buildAnthropicBody } from '@/lib/anthropicSanitize'
 
 const ANTHROPIC_URL  = 'https://api.anthropic.com/v1/messages'
 const MODEL_VERSION  = 'claude-opus-4-7'        // 통합 분석은 세션당 1회 → Opus 사용
@@ -187,15 +188,20 @@ export async function getOrCreateSessionAnalysis(
     'Now call the submit_session_analysis tool with the unified analysis.',
   ].join('\n')
 
-  // 3) Claude 호출 — tool_use enum 으로 28 defense 표기 흐트러짐 자체 차단
+  // 3) Claude 호출 — tool_use enum 으로 28 defense 표기 흐트러짐 자체 차단.
+  //    sys 와 user 는 DB 에서 읽어온 journal/narrative 텍스트를 포함하므로 lone
+  //    UTF-16 surrogate 가 섞일 수 있음 (Anthropic JSON 파서가 strict reject).
+  //    source string + post-stringify body 모두 정화.
+  const cleanSys  = stripLoneSurrogates(sys)
+  const cleanUser = stripLoneSurrogates(user)
   const aiRes = await fetch(ANTHROPIC_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({
-      model: MODEL_VERSION, max_tokens: 2048, system: sys,
+    body: buildAnthropicBody({
+      model: MODEL_VERSION, max_tokens: 2048, system: cleanSys,
       tools: [ANALYSIS_TOOL],
       tool_choice: { type: 'tool', name: ANALYSIS_TOOL.name },
-      messages: [{ role: 'user', content: user }],
+      messages: [{ role: 'user', content: cleanUser }],
     }),
   })
   if (!aiRes.ok) {

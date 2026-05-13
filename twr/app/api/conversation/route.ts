@@ -6,6 +6,7 @@
 import { createClient } from '@supabase/supabase-js'
 import stimuli from '@/dataset/processed/stimuli_cleaned.json'
 import { getOrCreateSessionAnalysis } from '@/lib/sessionAnalysis'
+import { stripLoneSurrogates, buildAnthropicBody } from '@/lib/anthropicSanitize'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,44 +29,6 @@ interface StimEntry {
   confidence: number; film: string; defense: string
 }
 const STIMULI = stimuli as StimEntry[]
-
-// 짝 없는 UTF-16 surrogate(D800-DBFF without DC00-DFFF, 또는 그 역) 를 제거.
-// Anthropic API JSON 파서가 lone surrogate 에 strict (no low surrogate in string).
-function stripLoneSurrogates(s: string): string {
-  let out = ''
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i)
-    if (c >= 0xD800 && c <= 0xDBFF) {
-      const n = s.charCodeAt(i + 1)
-      if (n >= 0xDC00 && n <= 0xDFFF) { out += s[i] + s[i + 1]; i++ }
-    } else if (c >= 0xDC00 && c <= 0xDFFF) {
-      // 짝 없는 low surrogate — drop
-    } else {
-      out += s[i]
-    }
-  }
-  return out
-}
-
-// JSON.stringify 결과 문자열에서 lone surrogate escape 를 제거.
-// Node 18+ 의 well-formed stringify 는 lone surrogate 를 \uXXXX literal 로
-// 그대로 출력하므로 (RFC 8259 strict parser 인 Anthropic 이 reject), source
-// sanitize 가 한 군데라도 빠지면 여기서 마지막으로 잡는다.
-//   - \uD800..\uDBFF 가 직후 \uDC00..\uDFFF 와 짝이면 valid → 보존
-//   - 그렇지 않으면 drop
-//   - 단독 low surrogate \uDC00..\uDFFF 도 drop
-function stripLoneSurrogateEscapes(s: string): string {
-  // 먼저 lone low: 앞에 high 가 없으면 drop. 패턴 단순화를 위해 두 단계로.
-  // 1) high 가 low 와 짝인 경우는 임시 마커로 치환해서 보호.
-  const HI = /\\u(D[89AB][0-9A-Fa-f]{2})\\u(D[C-Fc-f][0-9A-Fa-f]{2})/g
-  const protectedStr = s.replace(HI, '\u0001$1$2\u0002')
-  // 2) 남아있는 lone high / lone low escape 를 제거.
-  const cleaned = protectedStr
-    .replace(/\\uD[89AB][0-9A-Fa-f]{2}/g, '')
-    .replace(/\\uD[C-Fc-f][0-9A-Fa-f]{2}/g, '')
-  // 3) 보호한 paired 를 복원.
-  return cleaned.replace(/\u0001(D[89AB][0-9A-Fa-f]{2})(D[C-Fc-f][0-9A-Fa-f]{2})\u0002/g, '\\u$1\\u$2')
-}
 
 export async function POST(request: Request) {
   const url       = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -225,12 +188,10 @@ export async function POST(request: Request) {
     content: stripLoneSurrogates(m.content ?? ''),
   }))
   const cleanSys = stripLoneSurrogates(sys)
-  const rawBody  = JSON.stringify({ model: MODEL_VERSION, max_tokens: 350, system: cleanSys, messages: apiMessages })
-  const cleanBody = stripLoneSurrogateEscapes(rawBody)
   const aiRes = await fetch(ANTHROPIC_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': anthropic, 'anthropic-version': '2023-06-01' },
-    body: cleanBody,
+    body: buildAnthropicBody({ model: MODEL_VERSION, max_tokens: 350, system: cleanSys, messages: apiMessages }),
   })
   if (!aiRes.ok) {
     const errText = await aiRes.text()
