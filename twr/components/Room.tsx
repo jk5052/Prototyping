@@ -379,12 +379,37 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed }: Room
           new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
         )
         const inFrustum = frustum.intersectsBox(bb)
+        // material/transparency 진단: child mesh 들의 색·투명도·visible flag 를 dump.
+        // 동시에 emissive override 를 걸어서 빨갛게 자체발광시킴 — 보이면 lighting/material
+        // 문제 확정 (단일 광원 아래 너무 어둡거나 cover 가 검정), 안 보이면 occlusion 의심.
+        let childCount = 0
+        chairRoot.traverse((o) => {
+          const mm = o as THREE.Mesh
+          if (!(mm as unknown as { isMesh?: boolean }).isMesh) return
+          childCount++
+          const mats = Array.isArray(mm.material) ? mm.material : [mm.material]
+          mats.forEach((mt, i) => {
+            const mat = mt as THREE.MeshStandardMaterial & { color?: THREE.Color; opacity?: number; transparent?: boolean }
+            if (childCount <= 4) {
+              console.log('[Room][diag] chair child', mm.name || '(unnamed)', `mat#${i}`,
+                'color=', mat?.color?.getHexString?.() ?? '?',
+                'opacity=', mat?.opacity ?? '?',
+                'transparent=', mat?.transparent ?? '?',
+                'visible=', mm.visible)
+            }
+            if (mat && 'emissive' in mat) {
+              mat.emissive = new THREE.Color(0xff2200)
+              mat.emissiveIntensity = 1.5
+              mat.needsUpdate = true
+            }
+          })
+        })
         console.log('[Room][diag] banquet_chair bbox',
           'min=', bb.min.x.toFixed(1), bb.min.y.toFixed(1), bb.min.z.toFixed(1),
           'max=', bb.max.x.toFixed(1), bb.max.y.toFixed(1), bb.max.z.toFixed(1),
           'center=', c.x.toFixed(1), c.y.toFixed(1), c.z.toFixed(1),
           'size=', sz.x.toFixed(1), sz.y.toFixed(1), sz.z.toFixed(1),
-          'inFrustum=', inFrustum,
+          'inFrustum=', inFrustum, 'meshChildren=', childCount,
         )
       }
       console.log(
