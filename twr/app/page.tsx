@@ -205,6 +205,20 @@ export default function Home() {
           />
         )}
 
+        {/* R4 포스터 chain 동안 띄우는 배경 이미지. GLB 안의 포스터 텍스처가
+            저해상도라 카메라가 줌인 해도 디테일이 잘 안 보여서, public/assets/
+            의 고해상도 PNG 를 같은 itemId 로 매핑 (poster_art → poster_art.png).
+            EventOverlay 보다 뒤 z-stack, pointer-events-none 으로 클릭 통과. */}
+        {chain && roomNumber === 4 && chain.itemId.startsWith('poster_') && (
+          <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+            <img
+              src={`/assets/${chain.itemId}.png`}
+              alt=""
+              className="max-w-[55vw] max-h-[75vh] object-contain opacity-40 mix-blend-screen animate-[fadeIn_1200ms_ease-out]"
+            />
+          </div>
+        )}
+
         {chain && currentEvent && (
           <EventOverlay
             // event 변경 시 EventOverlay 내부 상태 리셋되도록 key 부여
