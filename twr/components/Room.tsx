@@ -366,6 +366,27 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed }: Room
         'meshAhead=', hits[0]?.distance.toFixed(2) ?? 'NONE',
         hits[0]?.object.name ?? '',
       )
+      // R3 banquet chair 진단: world bbox + 카메라 frustum 안 여부.
+      // 보이지 않는 원인이 (a) 위치 outlier, (b) 라이팅 불가시, (c) 다른 메시
+      // 뒤 occlusion 셋 중 어느 쪽인지 확인용. 매 로드마다 한 번 dump.
+      const chairRoot = scene.getObjectByName('banquet_chair_WITH_COVER') ?? scene.getObjectByName('banquet chair WITH COVER')
+      if (chairRoot) {
+        const bb = new THREE.Box3().setFromObject(chairRoot)
+        const c = new THREE.Vector3(); bb.getCenter(c)
+        const sz = new THREE.Vector3(); bb.getSize(sz)
+        camera.updateMatrixWorld(true); camera.updateProjectionMatrix()
+        const frustum = new THREE.Frustum().setFromProjectionMatrix(
+          new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+        )
+        const inFrustum = frustum.intersectsBox(bb)
+        console.log('[Room][diag] banquet_chair bbox',
+          'min=', bb.min.x.toFixed(1), bb.min.y.toFixed(1), bb.min.z.toFixed(1),
+          'max=', bb.max.x.toFixed(1), bb.max.y.toFixed(1), bb.max.z.toFixed(1),
+          'center=', c.x.toFixed(1), c.y.toFixed(1), c.z.toFixed(1),
+          'size=', sz.x.toFixed(1), sz.y.toFixed(1), sz.z.toFixed(1),
+          'inFrustum=', inFrustum,
+        )
+      }
       console.log(
         '[Room] meshes', modelPath,
         'total=', meshTotal, 'visible=', meshVisible, 'named=', meshNamed,
