@@ -2,15 +2,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { getSessionId, getPlayerId } from '@/lib/session'
 
-// Letter-compose phase. Sits between Sealing and LetterOverlay.
+// Letter-compose phase. Sits between LetterReplyOverlay and CardOverlay.
+// The player has already received a letter and written a private reply
+// to it; this phase invites them to compose their own letter — which
+// optionally joins the future matching pool.
 //
 // Flow (spec):
 //   1. Show the player's three sealing answers back to them.
-//   2. Player picks one answer/word/phrase that connects to a memory.
+//   2. Player picks one phrase that opened a memory.
 //   3. Show a writing prompt that quotes the picked phrase.
 //   4. Player writes a short text — this becomes their letter.
 //   5. Player decides whether the letter enters the anonymous archive.
-//   6. onComplete → matched letter is fetched + displayed in LetterOverlay.
+//   6. onComplete → card.
 //
 // Side effects:
 //   step 'select' — no API call. The pick is held locally and only sent
@@ -20,8 +23,7 @@ import { getSessionId, getPlayerId } from '@/lib/session'
 //   step 'write'  — POST /api/compose-letter once with
 //     { selected_template_id, selected_answer, composed_letter }.
 //     The endpoint embeds the composed letter (3072d halfvec) and
-//     upserts letter_exchanges. The matched letter is NOT revealed
-//     here — that only happens in LetterOverlay via /api/letter.
+//     updates letter_exchanges (the row already exists from receive).
 //   step 'share'  — POST /api/share-letter with { share }. share=false
 //     records the choice without inserting into seed_letters.
 //     share=true triggers share_player_letter RPC which copies the
@@ -145,10 +147,10 @@ export default function LetterComposeOverlay({ onComplete }: LetterComposeOverla
         {step === 'select' && (
           <div className="flex flex-col gap-5 animate-[fadeIn_900ms_ease-out]">
             <p className="text-white/55 text-[11px] tracking-[0.3em] uppercase text-center">
-              one of these is closer to a real moment than the others.
+              you sealed the room with three phrases.
             </p>
             <p className="text-white/45 text-[10px] tracking-[0.2em] uppercase text-center">
-              choose the line that pulls a memory with it.
+              did the letter open a memory? choose the phrase closest to it.
             </p>
             <div className="flex flex-col gap-3 mt-2">
               {answers.map((row) => (
@@ -173,7 +175,7 @@ export default function LetterComposeOverlay({ onComplete }: LetterComposeOverla
         {step === 'write' && picked && (
           <div className="flex flex-col gap-4 animate-[fadeIn_900ms_ease-out]">
             <p className="text-white/55 text-[11px] tracking-[0.3em] uppercase text-center">
-              tell me where this came from.
+              write the memory this phrase holds.
             </p>
             <p className="text-white/75 text-base font-serif italic text-center
               [text-shadow:0_1px_4px_rgba(0,0,0,0.85)]">
@@ -181,7 +183,7 @@ export default function LetterComposeOverlay({ onComplete }: LetterComposeOverla
             </p>
             <p className="text-white/40 text-[10px] leading-relaxed text-center max-w-md mx-auto">
               a moment, a place, a person. a few lines is enough.
-              <br/>this becomes your letter.
+              <br/>this becomes your letter — for a future stranger.
             </p>
             <textarea
               value={letter}

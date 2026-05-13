@@ -2,11 +2,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { getSessionId, getPlayerId } from '@/lib/session'
 
-// Letter-receive phase. Sits on top of finalroom, after LetterComposeOverlay.
-// The player has already (a) picked one sealing answer as anchor, (b) written
-// their own letter, (c) decided share Yes/No. By the time this overlay mounts
-// the match row exists in letter_exchanges (created during compose), so this
-// component is read-only: fetch matched letter (idempotent), fade in, continue.
+// Letter-receive phase. Sits on top of finalroom, directly after SealingOverlay.
+// /api/letter matches a seed letter using blank_fill_responses.answer_embedding
+// + primary_defense (mirrored by SealingOverlay's first answer). The mirror is
+// fire-and-forget so the embedding may still be in flight on first mount —
+// 425 is retried a few times with backoff before surfacing as an error.
+// onComplete advances to LetterReplyOverlay (the private response phase).
 
 interface LetterOverlayProps {
   onComplete: () => void
@@ -31,15 +32,28 @@ export default function LetterOverlay({ onComplete }: LetterOverlayProps) {
     if (fetchedRef.current) return
     fetchedRef.current = true
     void (async () => {
+      // 425 = sealing's blank-fill mirror not landed yet. Retry with backoff
+      // before surfacing as an error so a slow embed call doesn't strand the player.
+      const delays = [400, 800, 1500, 2500, 4000]
       try {
-        const r = await fetch('/api/letter', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ session_id: getSessionId(), player_id: getPlayerId() }),
-        })
-        if (!r.ok) { setError((await r.text()).slice(0, 200)); return }
-        const data = await r.json() as LetterRes
-        setLetter(data)
+        for (let i = 0; i <= delays.length; i++) {
+          const r = await fetch('/api/letter', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ session_id: getSessionId(), player_id: getPlayerId() }),
+          })
+          if (r.ok) {
+            const data = await r.json() as LetterRes
+            setLetter(data)
+            return
+          }
+          if (r.status === 425 && i < delays.length) {
+            await new Promise((res) => setTimeout(res, delays[i]))
+            continue
+          }
+          setError((await r.text()).slice(0, 200))
+          return
+        }
       } catch (e) {
         setError(String(e).slice(0, 200))
       } finally {
@@ -69,8 +83,11 @@ export default function LetterOverlay({ onComplete }: LetterOverlayProps) {
           {loading && <span className="text-white/60 text-sm tracking-widest animate-pulse">a letter is arriving…</span>}
           {!loading && letter && (
             <div className="animate-[fadeIn_1500ms_ease-out]">
-              <p className="text-white/45 text-[10px] tracking-[0.3em] uppercase mb-3">
-                in return — a letter from someone else
+              <p className="text-white/55 text-[11px] tracking-[0.3em] uppercase mb-2">
+                a letter has found you.
+              </p>
+              <p className="text-white/40 text-[10px] tracking-[0.2em] uppercase mb-4 max-w-md">
+                it is not an answer. it is a nearby trace — someone who passed through here before.
               </p>
               <p className="text-white/55 text-[10px] tracking-[0.3em] uppercase mb-4">
                 {letter.author_pseudonym ? `from ${letter.author_pseudonym}` : 'from a stranger'}
