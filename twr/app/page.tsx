@@ -3,6 +3,7 @@ import Spline from '@splinetool/react-spline'
 import { useEffect, useState } from 'react'
 import { useGameStore } from '@/stores/gameStore'
 import {
+  ITEMS,
   ITEM_BY_NAME,
   ROOM_MODELS,
   ROOM_INTROS,
@@ -51,6 +52,10 @@ export default function Home() {
 
   // 방 transition 시 띄우는 저널링 모달 (door click 또는 next-room 버튼).
   const [journaling, setJournaling] = useState<{ from: number; to: number | null } | null>(null)
+  // 미탐색 아이템이 남은 채 방을 나가려 할 때 한 번 더 물어보는 confirm 모달.
+  // door 클릭 또는 좌상단 next-room 버튼 클릭 시 unexplored>0 이면 발화. ok 누르면
+  // setJournaling 으로 정상 전환, cancel 누르면 모달만 닫고 방에 남음.
+  const [confirmExit, setConfirmExit] = useState<{ from: number; to: number | null } | null>(null)
 
   // 방 컨텍스트 (훅을 조건부로 못 쓰니 top-level에서 계산)
   const inRoom = isRoomPhase(phase)
@@ -143,19 +148,32 @@ export default function Home() {
     // 한 번 진행한 아이템은 재클릭 lockout. door 는 choices 에 기록되지 않으므로 자연히 제외.
     const isUsed = (name: string) =>
       choices.some((c) => c.room === roomNumber && c.itemId === name)
+    // 현재 방에 남은 미탐색 (regular) 아이템 수. door 와 entry chain 은 제외.
+    // door 클릭 / next-room 버튼 시 이 값이 >0 이면 confirm 모달 한 번 띄움.
+    const unexploredCount = ITEMS
+      .filter((it) => it.room === roomNumber && it.kind !== 'door')
+      .filter((it) => !isUsed(it.itemId)).length
+    const toRoomFor = (np: RoomPhase | 'conversation') =>
+      np === 'conversation' ? null : Number(np.replace('room', ''))
+    // door 또는 next-room 버튼 공통 진입점. unexplored>0 이면 confirm, 아니면 바로 journaling.
+    const requestExit = () => {
+      const target = { from: roomNumber, to: toRoomFor(nextPhase) }
+      if (unexploredCount > 0) setConfirmExit(target)
+      else setJournaling(target)
+    }
 
     return (
       <div className="relative w-screen h-screen bg-black">
         <Room
           modelPath={modelPath}
           onObjectClick={(name) => {
-            if (chain || showIntro || journaling) return
+            if (chain || showIntro || journaling || confirmExit) return
             const item = ITEM_BY_NAME[name]
             if (!item) return
-            // door 클릭 → 저널링 모달 (chain 시작 안 함). R5 출구는 conversation 으로
-            // 이어지므로 toRoom=null (다음 방 없음 = 마지막 방 종료 의미).
+            // door 클릭 → unexplored>0 면 confirm, 아니면 곧장 저널링 모달.
+            // R5 출구는 conversation 으로 이어지므로 toRoom=null (마지막 방 종료 의미).
             if (item.kind === 'door') {
-              setJournaling({ from: roomNumber, to: nextPhase === 'conversation' ? null : Number(nextPhase.replace('room','')) })
+              requestExit()
               return
             }
             if (item.events.length === 0) return
@@ -251,16 +269,40 @@ export default function Home() {
 
         {showNextBtn && (
           <button
-            onClick={() => setJournaling({
-              from: roomNumber,
-              to: nextPhase === 'conversation' ? null : Number(nextPhase.replace('room','')),
-            })}
+            onClick={requestExit}
             className="absolute top-4 left-4 text-white/30 hover:text-white/80
               text-[10px] tracking-[0.3em] uppercase transition-colors duration-700
               px-2 py-1"
           >
             {roomNumber < 5 ? 'next room ▸' : 'continue ▸'}
           </button>
+        )}
+
+        {confirmExit && (
+          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center">
+            <div className="max-w-md mx-6 px-8 py-7 border border-white/15 bg-black/80 text-center">
+              <p className="font-serif text-white/85 text-lg leading-relaxed italic">
+                there are still things you haven&apos;t looked at.
+              </p>
+              <p className="mt-2 text-white/40 text-[11px] tracking-[0.25em] uppercase">
+                {unexploredCount} item{unexploredCount === 1 ? '' : 's'} left in this room
+              </p>
+              <div className="mt-6 flex justify-center gap-6">
+                <button
+                  onClick={() => setConfirmExit(null)}
+                  className="text-white/60 hover:text-white/90 text-[11px] tracking-[0.3em] uppercase px-3 py-2 transition-colors duration-500"
+                >
+                  stay
+                </button>
+                <button
+                  onClick={() => { const t = confirmExit; setConfirmExit(null); setJournaling(t) }}
+                  className="text-white/85 hover:text-white text-[11px] tracking-[0.3em] uppercase px-3 py-2 border border-white/30 hover:border-white/60 transition-colors duration-500"
+                >
+                  leave anyway ▸
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         <div className="absolute bottom-4 left-4 text-white/20 text-xs tracking-widest">
