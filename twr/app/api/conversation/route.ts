@@ -177,14 +177,29 @@ export async function POST(request: Request) {
     'Output ONLY the spoken line(s). No labels, no quotation marks around your whole reply, no preamble like "Here is…".',
   ].join('\n')
 
-  // 5) Claude 호출 — 첫 턴은 messages=[] 라 합성 user 메시지로 시작.
-  // Anthropic 의 JSON 파서가 lone UTF-16 surrogate (D800-DFFF unpaired) 가
+  // 5) Claude 호출 — Anthropic messages API 는 (a) 첫 항목이 user role 이어야
+  //    하고 (b) user/assistant 가 엄격히 교대해야 한다. 클라이언트(VoidDialogue)
+  //    는 첫 턴의 합성 '(begin)' 을 모르기 때문에, 두 번째 턴부터 history 가
+  //    assistant 로 시작해 400 (→ 우리 502) 를 받는다. 여기서 정규화:
+  //      - empty history → [{user:'(begin)'}]
+  //      - history[0]==assistant → 앞에 {user:'(begin)'} prepend
+  //      - 연속 같은 role → 사이에 빈 user/assistant 를 끼우진 않고, Anthropic
+  //        이 자체 reject 하면 그대로 표면화 (현재까지는 클라이언트가 strict
+  //        교대를 지키므로 미발생).
+  // Anthropic 의 JSON 파서는 lone UTF-16 surrogate (D800-DFFF unpaired) 가
   // 섞이면 "no low surrogate in string" 으로 reject. stimuli_cleaned.json 의
   // 영화 인용 / 이전 LLM 출력의 summary 에서 가끔 발생.
   // 주의: JSON.stringify 는 ES2019+ 에서 lone surrogate 를 \uXXXX 리터럴 escape
   // 로 변환하므로, 결과 문자열에서 strip 해봐야 이미 escape 된 surrogate 는 못 잡음.
   // 반드시 stringify 이전 단계에서 source string 을 정화해야 함.
-  const baseMessages: ChatMsg[] = history.length > 0 ? history : [{ role: 'user', content: '(begin)' }]
+  let baseMessages: ChatMsg[]
+  if (history.length === 0) {
+    baseMessages = [{ role: 'user', content: '(begin)' }]
+  } else if (history[0].role === 'assistant') {
+    baseMessages = [{ role: 'user', content: '(begin)' }, ...history]
+  } else {
+    baseMessages = history
+  }
   const apiMessages: ChatMsg[] = baseMessages.map((m) => ({
     role: m.role,
     content: stripLoneSurrogates(m.content ?? ''),
