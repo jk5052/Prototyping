@@ -182,6 +182,20 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed }: Room
           mm.needsUpdate = true
         }
       }
+      // 또 다른 Spline quirk: 일부 root 노드가 음수 스케일 (예: R3 'banquet chair
+      // WITH COVER' = scale [-0.157, 0.157, 0.157]) 으로 export 됨. 음수 determinant
+      // 면 face winding 이 반전되어 front-face culling 으로 메시 전체가 사라짐
+      // (three.js 가 보통 자동 flip 하지만 nested transform 누적 시 누락되는 경우
+      // 관찰됨). mirrored 매트릭스 감지 시 DoubleSide 로 안전망.
+      m.updateWorldMatrix(true, false)
+      const det = m.matrixWorld.determinant()
+      if (det < 0) {
+        for (const mat of matsArr) {
+          if (!mat) continue
+          ;(mat as THREE.Material).side = THREE.DoubleSide
+          ;(mat as THREE.Material).needsUpdate = true
+        }
+      }
       meshes.push(m)
       if (m.name) {
         meshNamed++
