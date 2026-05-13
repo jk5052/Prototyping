@@ -28,7 +28,11 @@ type GlowEntry = {
   name: string
   root: THREE.Object3D
   mats: GlowMat[]
-  baseScale: number
+  // 전체 Vector3 로 보관 — Spline 의 일부 root (R3 banquet_chair_WITH_COVER 처럼
+  // scale=[-0.157, 0.157, 0.157] 인 mirrored mesh) 에서 setScalar(scalar) 로 적용
+  // 하면 X 축의 음수 부호가 Y, Z 까지 전파되어 메시가 inverted (모든 face winding
+  // 반전 + invisible). copy() + multiplyScalar(pulseScale) 로 부호 보존.
+  baseScale: THREE.Vector3
   phaseOffset: number
   pulseStart: number | null
 }
@@ -504,7 +508,7 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed, zoomTa
         if (mats.length === 0) return
         glows.push({
           name: o.name, root: o, mats,
-          baseScale: o.scale.x,
+          baseScale: o.scale.clone(),
           phaseOffset: Math.random() * Math.PI * 2,
           pulseStart: null,
         })
@@ -522,7 +526,7 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed, zoomTa
           m.mat.emissive.copy(m.baseEmissive)
           m.mat.emissiveIntensity = m.baseIntensity
         }
-        g.root.scale.setScalar(g.baseScale)
+        g.root.scale.copy(g.baseScale)
       }
       glowsRef.current = []
       hoveredNameRef.current = null
@@ -594,7 +598,7 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed, zoomTa
           pulseScale = 1 + PULSE_SCALE_PEAK * Math.sin(Math.PI * u)
         }
       }
-      g.root.scale.setScalar(g.baseScale * pulseScale)
+      g.root.scale.copy(g.baseScale).multiplyScalar(pulseScale)
       const isUsedNow = !!used && used(g.name)
       if (isUsedNow) {
         for (const m of g.mats) {
