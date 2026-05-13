@@ -184,8 +184,8 @@ export async function POST(request: Request) {
   // 주의: JSON.stringify 는 ES2019+ 에서 lone surrogate 를 \uXXXX 리터럴 escape
   // 로 변환하므로, 결과 문자열에서 strip 해봐야 이미 escape 된 surrogate 는 못 잡음.
   // 반드시 stringify 이전 단계에서 source string 을 정화해야 함.
-  const seed: ChatMsg[] = history.length > 0 ? history : [{ role: 'user', content: '(begin)' }]
-  const apiMessages: ChatMsg[] = seed.map((m) => ({
+  const baseMessages: ChatMsg[] = history.length > 0 ? history : [{ role: 'user', content: '(begin)' }]
+  const apiMessages: ChatMsg[] = baseMessages.map((m) => ({
     role: m.role,
     content: stripLoneSurrogates(m.content ?? ''),
   }))
