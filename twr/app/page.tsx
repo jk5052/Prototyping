@@ -216,8 +216,12 @@ export default function Home() {
               if (ended) {
                 setChain(null)
                 // R4 는 exit door mesh 가 없고 5 포스터/엘리베이터 chain 이 그 자체로
-                // 출구 — chain 종료 시 자동으로 JournalingOverlay(단어 픽) 진입.
-                if (roomNumber === 4) {
+                // 출구 — 포스터/엘리베이터 chain 종료 시에만 자동으로 JournalingOverlay
+                // 진입. entry chain (ENTRY_ITEM_ID) 끝남에는 발화 X.
+                if (
+                  roomNumber === 4 &&
+                  (chain.itemId.startsWith('poster_') || chain.itemId === 'modern_apartment_elevator')
+                ) {
                   setJournaling({ from: 4, to: 5 })
                 }
               } else setChain({ ...chain, index: chain.index + 1 })

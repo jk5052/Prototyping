@@ -445,7 +445,9 @@ export const ITEMS: ItemSchema[] = [
     ],
   },
   {
-    itemId: 'banquet chair WITH COVER',
+    // three.js GLTFLoader 의 PropertyBinding.sanitizeNodeName 가 공백을 _ 로 치환.
+    // GLB 안 이름은 'banquet chair WITH COVER' 지만 runtime scene 에선 underscores.
+    itemId: 'banquet_chair_WITH_COVER',
     room: 3,
     kind: 'regular',
     events: [
@@ -477,7 +479,7 @@ export const ITEMS: ItemSchema[] = [
     ],
   },
   {
-    itemId: 'Electric door key',
+    itemId: 'Electric_door_key',
     room: 3,
     kind: 'regular',
     events: [
@@ -559,7 +561,7 @@ export const ITEMS: ItemSchema[] = [
     ],
   },
   {
-    itemId: 'banquet chair WITH COVER',
+    itemId: 'banquet_chair_WITH_COVER',
     room: 3,
     kind: 'regular',
     events: [
@@ -791,7 +793,7 @@ export const ITEMS: ItemSchema[] = [
   // GLB mesh 가 있는 방만 등록. 그 외 방은 좌상단 "next room" 버튼이 동일 역할.
   { itemId: 'room01_door', room: 1, kind: 'door', events: [] },
   { itemId: 'door',        room: 2, kind: 'door', events: [] },
-  { itemId: 'big door',    room: 3, kind: 'door', events: [] },
+  { itemId: 'big_door',    room: 3, kind: 'door', events: [] },
   { itemId: 'Door',        room: 5, kind: 'door', events: [] },
 ]
 

@@ -52,6 +52,14 @@ const CAMERA_OVERRIDES: Record<string, { pos: readonly [number, number, number];
     target: [13.30, -4.53, -17.74] as const,
     fov: 50,
   },
+  // R5: 원본 Spline 'Camera' (pos -9.5, -6.7, 5.9, yfov 45°) 기준에서 시점을
+  // 살짝 뒤로 빼고 우측 약간 panning. Door (16, -16, -11.5) 가 화면 오른쪽 가장자리에
+  // 왼쪽 끝만 살짝 걸치고, statue (-15, -16, -12) 는 중앙~좌측에 그대로 남도록 미세조정.
+  '/models/r5.glb': {
+    pos:    [-7.50, -5.50, 9.00] as const,
+    target: [ 0.00, -13.00, -12.00] as const,
+    fov: 48,
+  },
   // Final room: 4 export 카메라 모두 동일한 'Camera' 이름 + 0.01 스케일 + znear 70
   // 으로 오작동. 'beginning vignette' 가 카메라 바로 앞 1.5 단위에 오버레이로 깔려있어
   // 별도 hide 처리(HIDDEN_MESH_PATTERNS) 와 함께 명시 시점 사용.
