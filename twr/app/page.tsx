@@ -331,7 +331,9 @@ export default function Home() {
     )
   }
 
-  // Void — finalroom 배경 위에서 LLM 대화 (영어, 무명 voice)
+  // Void — finalroom 배경 위에서 LLM 대화 (영어, 무명 voice).
+  // finalroom.glb 는 Spline 이 lighting 을 export 못 해 매시만 들어있음 →
+  // Room 에 lighting="bright" 로 키라이트/IBL 을 합성해야 컬러가 보임.
   if (phase === 'conversation') {
     return (
       <div className="relative w-screen h-screen bg-black">
@@ -340,6 +342,7 @@ export default function Home() {
           onObjectClick={() => {}}
           isInteractive={() => false}
           disableControls
+          lighting="bright"
         />
         {/* flow: R5 → conversation(LLM) → sealing(3 lines) → letter → card.
             구 blank_fill phase 는 sealing 에 흡수 — SealingOverlay 가 첫 답변을
@@ -361,6 +364,7 @@ export default function Home() {
           onObjectClick={() => {}}
           isInteractive={() => false}
           disableControls
+          lighting="bright"
         />
         <SealingOverlay onComplete={() => setPhase('letter')} />
       </div>
@@ -378,6 +382,7 @@ export default function Home() {
           onObjectClick={() => {}}
           isInteractive={() => false}
           disableControls
+          lighting="bright"
         />
         <LetterOverlay onComplete={() => setPhase('letter-reply')} />
       </div>
@@ -395,6 +400,7 @@ export default function Home() {
           onObjectClick={() => {}}
           isInteractive={() => false}
           disableControls
+          lighting="bright"
         />
         <LetterReplyOverlay onComplete={() => setPhase('letter-compose')} />
       </div>
@@ -411,6 +417,7 @@ export default function Home() {
           onObjectClick={() => {}}
           isInteractive={() => false}
           disableControls
+          lighting="bright"
         />
         <LetterComposeOverlay onComplete={() => setPhase('card')} />
       </div>
@@ -426,6 +433,7 @@ export default function Home() {
           onObjectClick={() => {}}
           isInteractive={() => false}
           disableControls
+          lighting="bright"
         />
         <CardOverlay onComplete={() => setPhase('landing')} />
       </div>
