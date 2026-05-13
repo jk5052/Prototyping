@@ -1,6 +1,6 @@
 'use client'
 import Spline from '@splinetool/react-spline'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useGameStore } from '@/stores/gameStore'
 import {
   ITEMS,
@@ -431,33 +431,27 @@ function FinalSceneShell({ children }: { children: React.ReactNode }) {
   )
 }
 
-// Conversation 진입용 인트로 비디오 (/subvideo.mp4). 1회 재생 후 마지막 프레임에
-// 정지 → 그 위에 VoidDialogue 가 fade-in. 클릭 시 즉시 스킵. loop 없음.
-// 종료 후 video 는 pause() 로 명시 정지하여 일부 브라우저의 play overlay 회피.
+// Conversation 진입용 인트로 GIF (/subvideo.gif). GIF 은 <video> 와 달리
+// onEnded / pause() 가 없어 고정 타이머 INTRO_DURATION_MS 후 VoidDialogue 가
+// fade-in. 클릭 시 즉시 스킵. GIF 자체는 introDone 이후에도 DOM 에 남아 배경을
+// 채움 (looping 인지 one-shot 인지는 GIF 인코더가 결정).
+const INTRO_DURATION_MS = 5500
 function ConversationScene({ onComplete }: { onComplete: () => void }) {
   const [introDone, setIntroDone] = useState(false)
-  const videoRef = useRef<HTMLVideoElement | null>(null)
 
-  const finishIntro = () => {
-    const v = videoRef.current
-    if (v) {
-      try { v.currentTime = Math.max(0, (v.duration || 0) - 0.05); v.pause() } catch { /* ignore */ }
-    }
-    setIntroDone(true)
-  }
+  useEffect(() => {
+    const id = window.setTimeout(() => setIntroDone(true), INTRO_DURATION_MS)
+    return () => window.clearTimeout(id)
+  }, [])
 
   return (
     <div
       className={`relative w-screen h-screen bg-black overflow-hidden ${introDone ? '' : 'cursor-pointer'}`}
-      onClick={() => { if (!introDone) finishIntro() }}
+      onClick={() => { if (!introDone) setIntroDone(true) }}
     >
-      <video
-        ref={videoRef}
-        src="/subvideo.mp4"
-        autoPlay
-        muted
-        playsInline
-        onEnded={finishIntro}
+      <img
+        src="/subvideo.gif"
+        alt=""
         className="absolute inset-0 w-full h-full object-cover"
       />
       {!introDone && (
