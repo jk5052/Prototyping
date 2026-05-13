@@ -52,14 +52,6 @@ const CAMERA_OVERRIDES: Record<string, { pos: readonly [number, number, number];
     target: [13.30, -4.53, -17.74] as const,
     fov: 50,
   },
-  // R5: 'Camera' (yfov 45°) frustum 이 좁아 statue (-15, -16, -12) 가 frustum
-  // 아래로 -27°, Door (16, -16, -11.5) 가 +37° 가로로 빠져 둘 다 화면 밖.
-  // 카메라를 살짝 뒤 + 위로 빼고 시야각 넓혀서 statue 가운데, Door 우측 살짝 걸침.
-  '/models/r5.glb': {
-    pos:    [-2.00, -3.00, 18.00] as const,
-    target: [-2.00, -14.00, -12.00] as const,
-    fov: 60,
-  },
   // Final room: 4 export 카메라 모두 동일한 'Camera' 이름 + 0.01 스케일 + znear 70
   // 으로 오작동. 'beginning vignette' 가 카메라 바로 앞 1.5 단위에 오버레이로 깔려있어
   // 별도 hide 처리(HIDDEN_MESH_PATTERNS) 와 함께 명시 시점 사용.
@@ -167,6 +159,20 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed }: Room
       if (m.raycast !== THREE.Mesh.prototype.raycast) {
         m.raycast = THREE.Mesh.prototype.raycast
         meshRaycastFixed++
+      }
+      // Spline export quirk: 일부 mat 이 alphaMode=BLEND 로 export 되지만 실제론
+      // opacity=1 + alphaMap 없음 → three.js 가 transparent=true + depthWrite=false
+      // 로 import → 다른 메시 뒤로 사라짐 (R5 statue 가 대표 케이스). 명백히 opaque
+      // 인 mat 은 transparent flag 정정.
+      const matsArr = Array.isArray(m.material) ? m.material : [m.material]
+      for (const mat of matsArr) {
+        if (!mat) continue
+        const mm = mat as THREE.Material & { opacity?: number; alphaMap?: unknown; alphaTest?: number }
+        if (mm.transparent && (mm.opacity ?? 1) >= 0.99 && !mm.alphaMap && (mm.alphaTest ?? 0) === 0) {
+          mm.transparent = false
+          mm.depthWrite = true
+          mm.needsUpdate = true
+        }
       }
       meshes.push(m)
       if (m.name) {

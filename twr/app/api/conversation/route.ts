@@ -29,6 +29,24 @@ interface StimEntry {
 }
 const STIMULI = stimuli as StimEntry[]
 
+// 짝 없는 UTF-16 surrogate(D800-DBFF without DC00-DFFF, 또는 그 역) 를 제거.
+// Anthropic API JSON 파서가 lone surrogate 에 strict (no low surrogate in string).
+function stripLoneSurrogates(s: string): string {
+  let out = ''
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i)
+    if (c >= 0xD800 && c <= 0xDBFF) {
+      const n = s.charCodeAt(i + 1)
+      if (n >= 0xDC00 && n <= 0xDFFF) { out += s[i] + s[i + 1]; i++ }
+    } else if (c >= 0xDC00 && c <= 0xDFFF) {
+      // 짝 없는 low surrogate — drop
+    } else {
+      out += s[i]
+    }
+  }
+  return out
+}
+
 export async function POST(request: Request) {
   const url       = process.env.NEXT_PUBLIC_SUPABASE_URL
   const secret    = process.env.SUPABASE_SECRET_KEY
@@ -159,12 +177,18 @@ export async function POST(request: Request) {
     'Output ONLY the spoken line(s). No labels, no quotation marks around your whole reply, no preamble like "Here is…".',
   ].join('\n')
 
-  // 5) Claude 호출 — 첫 턴은 messages=[] 라 합성 user 메시지로 시작
+  // 5) Claude 호출 — 첫 턴은 messages=[] 라 합성 user 메시지로 시작.
+  // Anthropic 의 JSON 파서가 lone UTF-16 surrogate (D800-DFFF unpaired) 가
+  // 섞이면 "no low surrogate in string" 으로 reject. stimuli_cleaned.json 의
+  // 영화 인용 / 이전 LLM 출력의 summary 에서 가끔 발생. JSON.stringify 결과를
+  // 한 번 정화해서 짝 없는 surrogate 를 제거한 후 전송.
   const apiMessages: ChatMsg[] = history.length > 0 ? history : [{ role: 'user', content: '(begin)' }]
+  const rawBody = JSON.stringify({ model: MODEL_VERSION, max_tokens: 350, system: sys, messages: apiMessages })
+  const cleanBody = stripLoneSurrogates(rawBody)
   const aiRes = await fetch(ANTHROPIC_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': anthropic, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: MODEL_VERSION, max_tokens: 350, system: sys, messages: apiMessages }),
+    body: cleanBody,
   })
   if (!aiRes.ok) {
     const errText = await aiRes.text()
