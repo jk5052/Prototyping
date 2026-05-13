@@ -393,29 +393,50 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed, zoomTa
           new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
         )
         const inFrustum = frustum.intersectsBox(bb)
-        // material/transparency 진단: child mesh 들의 색·투명도·visible flag 를 dump.
-        // 동시에 emissive override 를 걸어서 빨갛게 자체발광시킴 — 보이면 lighting/material
-        // 문제 확정 (단일 광원 아래 너무 어둡거나 cover 가 검정), 안 보이면 occlusion 의심.
+        // 부모 체인 visible flag 점검: 어느 ancestor 가 visible=false 면 자식 전부 invisible.
+        let ancestorHidden = false
+        for (let p: THREE.Object3D | null = chairRoot; p; p = p.parent) {
+          if (!p.visible) { ancestorHidden = true; break }
+        }
+        // NUCLEAR override — depthTest 끄고 renderOrder 최대치로 올려서 어떤 occluder
+        // 뒤에 있어도 무조건 화면에 그려지게. base color 까지 빨강으로 덮음.
+        // 이걸 했는데도 안 보이면: (a) ancestor.visible=false, (b) geometry 자체가 빈
+        // BufferGeometry, (c) frustumCulled 가 잘못된 bbox 로 cull, (d) material 가 없는
+        // mesh 만 있음 — 네 케이스만 남음.
         let childCount = 0
+        let meshWithMatCount = 0
+        const colorSamples: string[] = []
         chairRoot.traverse((o) => {
           const mm = o as THREE.Mesh
           if (!(mm as unknown as { isMesh?: boolean }).isMesh) return
           childCount++
+          mm.visible = true
+          mm.frustumCulled = false
+          mm.renderOrder = 9999
           const mats = Array.isArray(mm.material) ? mm.material : [mm.material]
-          mats.forEach((mt, i) => {
-            const mat = mt as THREE.MeshStandardMaterial & { color?: THREE.Color; opacity?: number; transparent?: boolean }
-            if (childCount <= 4) {
-              console.log('[Room][diag] chair child', mm.name || '(unnamed)', `mat#${i}`,
-                'color=', mat?.color?.getHexString?.() ?? '?',
-                'opacity=', mat?.opacity ?? '?',
-                'transparent=', mat?.transparent ?? '?',
-                'visible=', mm.visible)
+          mats.forEach((mt) => {
+            const mat = mt as THREE.MeshStandardMaterial & {
+              color?: THREE.Color; opacity?: number; transparent?: boolean;
+              depthTest?: boolean; depthWrite?: boolean; map?: unknown;
             }
-            if (mat && 'emissive' in mat) {
+            if (!mat) return
+            meshWithMatCount++
+            if (colorSamples.length < 6) {
+              colorSamples.push(
+                `${mm.name || '?'}|c=${mat.color?.getHexString?.() ?? '?'}|o=${mat.opacity ?? '?'}|t=${mat.transparent ?? '?'}|v=${mm.visible}|side=${mat.side}|map=${mat.map ? 'Y' : 'N'}`,
+              )
+            }
+            if (mat.color) mat.color.setHex(0xff2200)
+            if ('emissive' in mat) {
               mat.emissive = new THREE.Color(0xff2200)
-              mat.emissiveIntensity = 1.5
-              mat.needsUpdate = true
+              mat.emissiveIntensity = 2.5
             }
+            mat.opacity = 1
+            mat.transparent = false
+            mat.depthTest = false
+            mat.depthWrite = false
+            mat.side = THREE.DoubleSide
+            mat.needsUpdate = true
           })
         })
         console.log('[Room][diag] banquet_chair bbox',
@@ -423,8 +444,15 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed, zoomTa
           'max=', bb.max.x.toFixed(1), bb.max.y.toFixed(1), bb.max.z.toFixed(1),
           'center=', c.x.toFixed(1), c.y.toFixed(1), c.z.toFixed(1),
           'size=', sz.x.toFixed(1), sz.y.toFixed(1), sz.z.toFixed(1),
-          'inFrustum=', inFrustum, 'meshChildren=', childCount,
+          'inFrustum=', inFrustum,
+          'rootVisible=', chairRoot.visible,
+          'ancestorHidden=', ancestorHidden,
+          'meshChildren=', childCount,
+          'matCount=', meshWithMatCount,
         )
+        console.log('[Room][diag] chair samples:', colorSamples)
+      } else {
+        console.log('[Room][diag] banquet_chair NODE NOT FOUND in scene')
       }
       console.log(
         '[Room] meshes', modelPath,
