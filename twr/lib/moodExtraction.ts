@@ -4,6 +4,7 @@
 // the phrases can flavor the prompt). Sonnet 4.5 is sufficient — this is
 // vocabulary lifting, not reasoning.
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { stripLoneSurrogates, buildAnthropicBody } from '@/lib/anthropicSanitize'
 
 const ANTHROPIC_URL  = 'https://api.anthropic.com/v1/messages'
 const MODEL_VERSION  = 'claude-sonnet-4-5'
@@ -126,16 +127,20 @@ export async function extractMoodWords(
     'Now call submit_mood_words.',
   ].join('\n')
 
+  // user 블록은 narrative_logs/journals/final_reflections/blank_fill 에서 온
+  // player 자유 텍스트가 섞여 있어 lone UTF-16 surrogate 가 들어올 수 있음.
+  // source 정화 + post-stringify 정화로 Anthropic strict JSON 파서 보호.
+  const cleanUser = stripLoneSurrogates(user)
   const aiRes = await fetch(ANTHROPIC_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({
+    body: buildAnthropicBody({
       model: MODEL_VERSION,
       max_tokens: 512,
       system: SYSTEM_PROMPT,
       tools: [MOOD_TOOL],
       tool_choice: { type: 'tool', name: MOOD_TOOL.name },
-      messages: [{ role: 'user', content: user }],
+      messages: [{ role: 'user', content: cleanUser }],
     }),
   })
   if (!aiRes.ok) {
