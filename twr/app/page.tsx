@@ -56,6 +56,9 @@ export default function Home() {
   // door 클릭 또는 좌상단 next-room 버튼 클릭 시 unexplored>0 이면 발화. ok 누르면
   // setJournaling 으로 정상 전환, cancel 누르면 모달만 닫고 방에 남음.
   const [confirmExit, setConfirmExit] = useState<{ from: number; to: number | null } | null>(null)
+  // zoomOnClick 플래그를 가진 아이템 (현재 R4 포스터들) 클릭 시, 카메라가 해당 mesh
+  // 로 줌인. chain 종료/취소 시 base 로 복귀. Room 의 useFrame 이 lerp 처리.
+  const [zoomTarget, setZoomTarget] = useState<string | null>(null)
 
   // 방 컨텍스트 (훅을 조건부로 못 쓰니 top-level에서 계산)
   const inRoom = isRoomPhase(phase)
@@ -178,13 +181,18 @@ export default function Home() {
             }
             if (item.events.length === 0) return
             if (isUsed(name)) return
+            // zoomOnClick 아이템 (R4 포스터) — chain 시작과 동시에 카메라 줌인 트리거.
+            if (item.zoomOnClick) setZoomTarget(name)
             setChain({ itemId: name, events: item.events, index: 0 })
           }}
           isInteractive={(name) =>
             !!ITEM_BY_NAME[name] && !chain && !showIntro && !journaling && !isUsed(name)
           }
-          isItem={(name) => !!ITEM_BY_NAME[name]}
+          // glow registry 빌드용 — noGlow 아이템 (R4 엘리베이터) 은 인터랙션은 유지하되
+          // 시각적 강조에서만 제외. 포스터만 자체발광하게 됨.
+          isItem={(name) => !!ITEM_BY_NAME[name] && !ITEM_BY_NAME[name].noGlow}
           isUsed={isUsed}
+          zoomTarget={zoomTarget}
           disableControls
         />
 
@@ -234,6 +242,7 @@ export default function Home() {
               addOracleWords(pickOracleWords(3))
               if (ended) {
                 setChain(null)
+                setZoomTarget(null)
                 // R4 는 exit door mesh 가 없고 5 포스터/엘리베이터 chain 이 그 자체로
                 // 출구 — 포스터/엘리베이터 chain 종료 시에만 자동으로 JournalingOverlay
                 // 진입. entry chain (ENTRY_ITEM_ID) 끝남에는 발화 X.
@@ -248,6 +257,7 @@ export default function Home() {
             onCancel={() => {
               addCancellation(roomNumber)
               setChain(null)
+              setZoomTarget(null)
             }}
           />
         )}

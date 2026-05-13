@@ -14,6 +14,9 @@ interface RoomProps {
   isItem?: (name: string) => boolean
   // 이미 클릭해서 진행 완료된 아이템 — true 면 glow 와 클릭 둘 다 lockout.
   isUsed?: (name: string) => boolean
+  // 세팅되면 해당 이름의 mesh 로 카메라 줌인. null 이면 base 시점으로 복귀.
+  // R4 포스터 클릭 시 page.tsx 가 set → chain 종료 시 unset.
+  zoomTarget?: string | null
   disableControls?: boolean
 }
 
@@ -111,7 +114,7 @@ const BBOX_FIT_BACK_MULT: Record<string, number> = {
 // 상황을 검증하기 위함.
 const DEBUG_ALL_HITS = true
 
-function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed }: RoomProps) {
+function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed, zoomTarget }: RoomProps) {
   // modelPath stays a stable id ('/models/r1.glb') for the override tables;
   // only the URL handed to useGLTF gets rewritten to an external CDN when set.
   const { scene, cameras } = useGLTF(resolveModelUrl(modelPath))
@@ -132,6 +135,11 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed }: Room
   onObjectClickRef.current = onObjectClick
   isItemRef.current = isItem
   isUsedRef.current = isUsed
+  // 카메라 줌 애니메이션 상태. fit 직후 base 를 저장 → zoomTarget 이 set 되면
+  // target object 의 world bbox center 로 lerp, null 이면 base 로 복귀.
+  const baseCamRef = useRef<{ pos: THREE.Vector3; quat: THREE.Quaternion; fov: number } | null>(null)
+  const zoomTargetRef = useRef<string | null>(zoomTarget ?? null)
+  zoomTargetRef.current = zoomTarget ?? null
 
   // 새 GLB 로드 시 1회: GLB 안에 export 된 카메라(이름 'Camera' 또는 'Player') 의
   // world transform 을 그대로 active 카메라에 복사. 카메라가 없는 GLB 면 mesh bbox
@@ -352,6 +360,12 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed }: Room
     })
 
     fittedFor.current = modelPath
+    // fit 완료 직후의 카메라 state 를 base 로 보관 — 줌 해제 시 여기로 lerp 복귀.
+    baseCamRef.current = {
+      pos: camera.position.clone(),
+      quat: camera.quaternion.clone(),
+      fov: camera.fov,
+    }
     if (typeof window !== 'undefined') {
       // 카메라 정면으로 ray 쏴서 가장 가까운 mesh 까지 거리 측정 (디버그)
       const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)
@@ -513,11 +527,54 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed }: Room
   // - hover 중 root: HOVER_INTENSITY 로 잠김.
   // - 클릭 직후 PULSE_DUR 동안: emissive flash + 살짝 scale up.
   // - 이미 사용된 (isUsed=true) root: emissive/scale 모두 base 로 복원 (lockout).
+  // 줌 애니메이션 임시 객체 (alloc 회피용 — useFrame 호출 시마다 재사용).
+  const _zoomTmpPos = useRef(new THREE.Vector3())
+  const _zoomTmpQuat = useRef(new THREE.Quaternion())
+  const _zoomTmpCenter = useRef(new THREE.Vector3())
+  const _zoomTmpDir = useRef(new THREE.Vector3())
+  const _zoomTmpBox = useRef(new THREE.Box3())
+  const _zoomTmpMat = useRef(new THREE.Matrix4())
+  const _zoomUp = useRef(new THREE.Vector3(0, 1, 0))
+
   useFrame((state) => {
     const t = state.clock.elapsedTime
     const now = performance.now()
     const hovered = hoveredNameRef.current
     const used = isUsedRef.current
+    // 카메라 줌 lerp — zoomTarget set 이면 target object center 로 접근, 아니면 base 로 복귀.
+    // poster 처럼 평평한 mesh 는 bbox 의 가장 짧은 축이 법선이라고 가정하기보단, base
+    // camera→center 방향을 따라 distance 만 줄여 접근하는 방식이 안전 (항상 카메라
+    // 시점이 유지되는 면을 마주봄). distance = max(size*0.55, 0.6) 정도면 포스터가
+    // 화면의 대부분을 차지.
+    const base = baseCamRef.current
+    if (base) {
+      const target = zoomTargetRef.current
+      let tgtPos = base.pos
+      let tgtQuat = base.quat
+      let tgtFov = base.fov
+      if (target) {
+        const obj = scene.getObjectByName(target)
+        if (obj) {
+          _zoomTmpBox.current.setFromObject(obj)
+          const center = _zoomTmpBox.current.getCenter(_zoomTmpCenter.current)
+          const sz = _zoomTmpBox.current.getSize(new THREE.Vector3()).length()
+          const dir = _zoomTmpDir.current.subVectors(center, base.pos).normalize()
+          const dist = Math.max(sz * 0.55, 0.6)
+          tgtPos = _zoomTmpPos.current.copy(center).addScaledVector(dir, -dist)
+          const lookAt = _zoomTmpMat.current.lookAt(tgtPos, center, _zoomUp.current)
+          tgtQuat = _zoomTmpQuat.current.setFromRotationMatrix(lookAt)
+          tgtFov = base.fov * 0.7
+        }
+      }
+      const rate = 0.09
+      camera.position.lerp(tgtPos, rate)
+      camera.quaternion.slerp(tgtQuat, rate)
+      const newFov = THREE.MathUtils.lerp(camera.fov, tgtFov, rate)
+      if (Math.abs(newFov - camera.fov) > 0.01) {
+        camera.fov = newFov
+        camera.updateProjectionMatrix()
+      }
+    }
     for (const g of glowsRef.current) {
       let pulseI = 0, pulseScale = 1
       if (g.pulseStart != null) {
@@ -639,7 +696,7 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed }: Room
   return <primitive object={scene} />
 }
 
-export default function Room({ modelPath, onObjectClick, isInteractive, isItem, isUsed, disableControls }: RoomProps) {
+export default function Room({ modelPath, onObjectClick, isInteractive, isItem, isUsed, zoomTarget, disableControls }: RoomProps) {
   return (
     <Canvas
       camera={{ position: [0, 1.5, 4], fov: 50 }}
@@ -673,6 +730,7 @@ export default function Room({ modelPath, onObjectClick, isInteractive, isItem, 
           isInteractive={isInteractive}
           isItem={isItem}
           isUsed={isUsed}
+          zoomTarget={zoomTarget}
         />
       </Suspense>
       {!disableControls && (

@@ -39,6 +39,8 @@ export interface ItemSchema {
   kind: 'regular' | 'door' | 'cctv'       // door: 3슬롯/skip, cctv: 자동 시점 복귀
   events: ObjectEvent[]
   oneTimeOnly?: boolean                   // R4 doors 등 — 첫 chain 종료 후 잠금
+  noGlow?: boolean                        // 인터랙션은 살리되 glow registry 에서만 제외
+  zoomOnClick?: boolean                   // 클릭 시 카메라가 해당 mesh 로 줌인 (R4 포스터)
 }
 
 // R4 공통 chain — 포스터 5개 + 엘리베이터 본체가 동일하게 참조한다.
@@ -584,6 +586,7 @@ export const ITEMS: ItemSchema[] = [
     itemId: 'poster_art',
     room: 4,
     kind: 'regular',
+    zoomOnClick: true,
     events: [
       {
         text: 'An art poster. Abstract. Vivid colors.',
@@ -598,6 +601,7 @@ export const ITEMS: ItemSchema[] = [
     itemId: 'poster_family',
     room: 4,
     kind: 'regular',
+    zoomOnClick: true,
     events: [
       {
         text: 'A family photo poster. A warm atmosphere.',
@@ -612,6 +616,7 @@ export const ITEMS: ItemSchema[] = [
     itemId: 'poster_psychology',
     room: 4,
     kind: 'regular',
+    zoomOnClick: true,
     events: [
       {
         text: 'A psychology lecture poster. A brain and diagrams.',
@@ -626,6 +631,7 @@ export const ITEMS: ItemSchema[] = [
     itemId: 'poster_comic',
     room: 4,
     kind: 'regular',
+    zoomOnClick: true,
     events: [
       {
         text: 'A comic poster. Exaggerated characters laughing.',
@@ -640,6 +646,7 @@ export const ITEMS: ItemSchema[] = [
     itemId: 'poster_relation',
     room: 4,
     kind: 'regular',
+    zoomOnClick: true,
     events: [
       {
         text: 'A poster of people holding hands. Something about relationships.',
@@ -651,10 +658,12 @@ export const ITEMS: ItemSchema[] = [
     ],
   },
   // 엘리베이터 본체: 포스터 안 거치고 바로 클릭한 경우에도 동일 chain 진행.
+  // noGlow — 시각적 강조는 포스터만 받게. 클릭 자체는 그대로 유효.
   {
     itemId: 'modern_apartment_elevator',
     room: 4,
     kind: 'regular',
+    noGlow: true,
     events: [...ELEVATOR_CHAIN_EVENTS],
   },
 
