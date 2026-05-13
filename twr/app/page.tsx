@@ -137,9 +137,9 @@ export default function Home() {
     const roomChoiceCount = choices.filter((c) => c.room === roomNumber).length
     // 방 넘어가기 버튼은 좌측상단에 항상 표시 (chain/intro 중일 때만 숨김).
     const showNextBtn = !chain && !showIntro
-    // R5 종료 후엔 LLM 대화 직전 sealing ritual (3줄 빈칸 채우기) 로 먼저 이동.
-    const nextPhase: RoomPhase | 'sealing' =
-      roomNumber < 5 ? (`room${roomNumber + 1}` as RoomPhase) : 'sealing'
+    // R5 종료 후엔 LLM 대화 → sealing → letter → card 순서. 다음 phase 는 conversation.
+    const nextPhase: RoomPhase | 'conversation' =
+      roomNumber < 5 ? (`room${roomNumber + 1}` as RoomPhase) : 'conversation'
     // 한 번 진행한 아이템은 재클릭 lockout. door 는 choices 에 기록되지 않으므로 자연히 제외.
     const isUsed = (name: string) =>
       choices.some((c) => c.room === roomNumber && c.itemId === name)
@@ -152,10 +152,10 @@ export default function Home() {
             if (chain || showIntro || journaling) return
             const item = ITEM_BY_NAME[name]
             if (!item) return
-            // door 클릭 → 저널링 모달 (chain 시작 안 함). R5 출구는 sealing 으로
+            // door 클릭 → 저널링 모달 (chain 시작 안 함). R5 출구는 conversation 으로
             // 이어지므로 toRoom=null (다음 방 없음 = 마지막 방 종료 의미).
             if (item.kind === 'door') {
-              setJournaling({ from: roomNumber, to: nextPhase === 'sealing' ? null : Number(nextPhase.replace('room','')) })
+              setJournaling({ from: roomNumber, to: nextPhase === 'conversation' ? null : Number(nextPhase.replace('room','')) })
               return
             }
             if (item.events.length === 0) return
@@ -253,7 +253,7 @@ export default function Home() {
           <button
             onClick={() => setJournaling({
               from: roomNumber,
-              to: nextPhase === 'sealing' ? null : Number(nextPhase.replace('room','')),
+              to: nextPhase === 'conversation' ? null : Number(nextPhase.replace('room','')),
             })}
             className="absolute top-4 left-4 text-white/30 hover:text-white/80
               text-[10px] tracking-[0.3em] uppercase transition-colors duration-700
@@ -280,10 +280,27 @@ export default function Home() {
           isInteractive={() => false}
           disableControls
         />
-        {/* flow: R5 → sealing(3 lines) → conversation → letter → card.
+        {/* flow: R5 → conversation(LLM) → sealing(3 lines) → letter → card.
             구 blank_fill phase 는 sealing 에 흡수 — SealingOverlay 가 첫 답변을
             /api/blank-fill 로 mirror 하여 downstream embedding 파이프라인 유지. */}
-        <VoidDialogue onComplete={() => setPhase('letter')} />
+        <VoidDialogue onComplete={() => setPhase('sealing')} />
+      </div>
+    )
+  }
+
+  // Sealing ritual — finalroom 배경 위에서 LLM 대화 직후 3개 짧은 문장.
+  // VoidDialogue 종료 직후 진입. final_reflections 에 prompt_key 별 upsert + 첫 답변은
+  // blank_fill_responses 로 mirror 되어 downstream embedding 파이프라인을 유지. 완료 시 letter.
+  if (phase === 'sealing') {
+    return (
+      <div className="relative w-screen h-screen bg-black">
+        <Room
+          modelPath={FINAL_MODEL}
+          onObjectClick={() => {}}
+          isInteractive={() => false}
+          disableControls
+        />
+        <SealingOverlay onComplete={() => setPhase('letter')} />
       </div>
     )
   }
@@ -299,22 +316,6 @@ export default function Home() {
           disableControls
         />
         <LetterOverlay onComplete={() => setPhase('card')} />
-      </div>
-    )
-  }
-
-  // Sealing ritual — finalroom 배경 위에서 LLM 대화 직전 3개 짧은 문장.
-  // R5 종료 직후 진입. final_reflections 에 prompt_key 별 upsert. 완료 시 conversation.
-  if (phase === 'sealing') {
-    return (
-      <div className="relative w-screen h-screen bg-black">
-        <Room
-          modelPath={FINAL_MODEL}
-          onObjectClick={() => {}}
-          isInteractive={() => false}
-          disableControls
-        />
-        <SealingOverlay onComplete={() => setPhase('conversation')} />
       </div>
     )
   }

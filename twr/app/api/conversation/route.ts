@@ -180,15 +180,17 @@ export async function POST(request: Request) {
   // 5) Claude 호출 — 첫 턴은 messages=[] 라 합성 user 메시지로 시작.
   // Anthropic 의 JSON 파서가 lone UTF-16 surrogate (D800-DFFF unpaired) 가
   // 섞이면 "no low surrogate in string" 으로 reject. stimuli_cleaned.json 의
-  // 영화 인용 / 이전 LLM 출력의 summary 에서 가끔 발생. JSON.stringify 결과를
-  // 한 번 정화해서 짝 없는 surrogate 를 제거한 후 전송.
-  const apiMessages: ChatMsg[] = history.length > 0 ? history : [{ role: 'user', content: '(begin)' }]
-  const rawBody = JSON.stringify({ model: MODEL_VERSION, max_tokens: 350, system: sys, messages: apiMessages })
-  const cleanBody = stripLoneSurrogates(rawBody)
+  // 영화 인용 / 이전 LLM 출력의 summary 에서 가끔 발생.
+  // 주의: JSON.stringify 는 ES2019+ 에서 lone surrogate 를 \uXXXX 리터럴 escape
+  // 로 변환하므로, 결과 문자열에서 strip 해봐야 이미 escape 된 surrogate 는 못 잡음.
+  // 반드시 stringify 이전 단계에서 source string 을 정화해야 함.
+  const apiMessages: ChatMsg[] = (history.length > 0 ? history : [{ role: 'user', content: '(begin)' }])
+    .map((m) => ({ role: m.role, content: stripLoneSurrogates(m.content ?? '') }))
+  const cleanSys = stripLoneSurrogates(sys)
   const aiRes = await fetch(ANTHROPIC_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': anthropic, 'anthropic-version': '2023-06-01' },
-    body: cleanBody,
+    body: JSON.stringify({ model: MODEL_VERSION, max_tokens: 350, system: cleanSys, messages: apiMessages }),
   })
   if (!aiRes.ok) {
     const errText = await aiRes.text()
