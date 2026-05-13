@@ -918,7 +918,13 @@ export const ROOM_MODELS: Record<number, string> = {
   5: '/models/r5.glb',
 }
 
-// 'conversation' phase 의 백그라운드 — Void 흰 공간 (LLM 대화 단계).
+// 'conversation' / 'sealing' / 'letter*' / 'card' phase 의 백그라운드.
+// Spline viewer URL 을 사용 — Spline 의 GLB export 가 lighting/animation/post-FX
+// 를 빼버려서 GLB 직접 로드 시 어둡게 나옴. viewer 는 Spline editor 와 동일한
+// 풀 런타임이라 라이팅까지 그대로 보존. 인터랙티브 hook 은 없지만 finalroom 은
+// 배경 전용이라 무관.
+export const FINAL_SPLINE_SCENE = 'https://prod.spline.design/86Je24XH0llXc7tZ/scene.splinecode'
+// 보존용 — GLB 파일은 그대로 두되 현재 렌더 경로에선 미사용 (fallback 가능성).
 export const FINAL_MODEL = '/models/finalroom.glb'
 
 // 방 진입 시 1인칭 인트로 (눈 깜박임 + 생각). 끝나면 ROOM_ENTRY_EVENTS chain이 이어짐.

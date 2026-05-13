@@ -18,12 +18,6 @@ interface RoomProps {
   // R4 포스터 클릭 시 page.tsx 가 set → chain 종료 시 unset.
   zoomTarget?: string | null
   disableControls?: boolean
-  // 'dim' (default): R1-R5 의 어두운 white-room 무드. GLB 내부 KHR_lights_punctual
-  //   에 mood 를 맡기고 ambient/IBL 은 그림자 메우는 fill 정도로만.
-  // 'bright': Spline 에서 lighting 을 export 못 한 GLB (finalroom) 용. 자체 키라이트
-  //   + 강한 fill + 밝은 IBL + 밝은 배경색으로 Spline editor 의 baseline lighting 을
-  //   흉내냄.
-  lighting?: 'dim' | 'bright'
 }
 
 type EmissiveMat = THREE.Material & { emissive: THREE.Color; emissiveIntensity: number }
@@ -730,13 +724,12 @@ function Scene({ modelPath, onObjectClick, isInteractive, isItem, isUsed, zoomTa
   return <primitive object={scene} />
 }
 
-export default function Room({ modelPath, onObjectClick, isInteractive, isItem, isUsed, zoomTarget, disableControls, lighting = 'dim' }: RoomProps) {
-  const bright = lighting === 'bright'
+export default function Room({ modelPath, onObjectClick, isInteractive, isItem, isUsed, zoomTarget, disableControls }: RoomProps) {
   return (
     <Canvas
       camera={{ position: [0, 1.5, 4], fov: 50 }}
       className="w-full h-full"
-      gl={{ toneMappingExposure: bright ? 1.25 : 1.0 }}
+      gl={{ toneMappingExposure: 1.0 }}
       onPointerMissed={(e) => {
         // raycaster 가 scene 의 어떤 mesh 도 못 맞힘 → 카메라가 빈 공간 향하거나
         // mesh 가 ray 범위 밖. window.__roomDebug 로 카메라/scene 상태 확인 가능.
@@ -746,21 +739,11 @@ export default function Room({ modelPath, onObjectClick, isInteractive, isItem, 
         else console.log('[Room] pointer missed (no mesh hit) — camera may be inside wall or facing void')
       }}
     >
-      {/* dim: GLB 안의 KHR_lights_punctual (point/spot/directional) + apartment IBL 약하게.
+      {/* GLB 안의 KHR_lights_punctual (point/spot/directional) + apartment IBL 약하게.
           R1: cozy(5) / R2,R4: dim(2-3) / R3: flashy(1+emissive) / R5: mystical(6).
-          IBL 은 회색 fill 용 (intensity 0.06) — mood 는 puncutal light 가 좌우.
-          bright: Spline 이 lighting 을 export 못 한 GLB 용 — 키라이트+hemisphere fill
-          +city IBL 로 Spline editor baseline 을 흉내냄. finalroom 의 컬러 텍스처가
-          제대로 보이도록 ambient/env intensity 를 정상 범위로 올림. */}
-      <color attach="background" args={[bright ? '#1a2530' : '#030303']} />
-      <ambientLight intensity={bright ? 0.45 : 0.04} />
-      {bright && (
-        <>
-          <hemisphereLight args={['#dfeaf5', '#3a3225', 0.6]} />
-          <directionalLight position={[5, 8, 6]} intensity={1.1} castShadow={false} />
-          <directionalLight position={[-4, 3, -2]} intensity={0.35} />
-        </>
-      )}
+          IBL 은 회색 fill 용 (intensity 0.06) — mood 는 puncutal light 가 좌우. */}
+      <color attach="background" args={['#030303']} />
+      <ambientLight intensity={0.04} />
       <Suspense fallback={
         <Html center>
           <div className="text-white/40 text-[10px] tracking-[0.4em] uppercase animate-pulse">
@@ -768,11 +751,7 @@ export default function Room({ modelPath, onObjectClick, isInteractive, isItem, 
           </div>
         </Html>
       }>
-        <Environment
-          preset={bright ? 'city' : 'apartment'}
-          environmentIntensity={bright ? 0.9 : 0.06}
-          background={false}
-        />
+        <Environment preset="apartment" environmentIntensity={0.06} background={false} />
         <Scene
           modelPath={modelPath}
           onObjectClick={onObjectClick}

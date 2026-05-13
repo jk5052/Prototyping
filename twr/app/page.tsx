@@ -9,7 +9,7 @@ import {
   ROOM_INTROS,
   ROOM_ENTRY_EVENTS,
   ENTRY_ITEM_ID,
-  FINAL_MODEL,
+  FINAL_SPLINE_SCENE,
   type ObjectEvent,
 } from '@/data/events'
 import { useIdleTracker } from '@/lib/useIdleTracker'
@@ -332,23 +332,17 @@ export default function Home() {
   }
 
   // Void — finalroom 배경 위에서 LLM 대화 (영어, 무명 voice).
-  // finalroom.glb 는 Spline 이 lighting 을 export 못 해 매시만 들어있음 →
-  // Room 에 lighting="bright" 로 키라이트/IBL 을 합성해야 컬러가 보임.
+  // 배경은 Spline viewer (full runtime) — GLB export 가 라이팅/애니메이션을
+  // 빼버려서 GLB 직접 로드 대신 viewer URL 을 쓰면 Spline editor 와 동일하게
+  // 렌더됨. 인터랙티브 hook 은 필요 없음 (배경 전용).
   if (phase === 'conversation') {
     return (
-      <div className="relative w-screen h-screen bg-black">
-        <Room
-          modelPath={FINAL_MODEL}
-          onObjectClick={() => {}}
-          isInteractive={() => false}
-          disableControls
-          lighting="bright"
-        />
+      <FinalSceneShell>
         {/* flow: R5 → conversation(LLM) → sealing(3 lines) → letter → card.
             구 blank_fill phase 는 sealing 에 흡수 — SealingOverlay 가 첫 답변을
             /api/blank-fill 로 mirror 하여 downstream embedding 파이프라인 유지. */}
         <VoidDialogue onComplete={() => setPhase('sealing')} />
-      </div>
+      </FinalSceneShell>
     )
   }
 
@@ -358,16 +352,9 @@ export default function Home() {
   // 완료 시 letter (receive) 단계로 — 매칭된 편지를 먼저 보여준다.
   if (phase === 'sealing') {
     return (
-      <div className="relative w-screen h-screen bg-black">
-        <Room
-          modelPath={FINAL_MODEL}
-          onObjectClick={() => {}}
-          isInteractive={() => false}
-          disableControls
-          lighting="bright"
-        />
+      <FinalSceneShell>
         <SealingOverlay onComplete={() => setPhase('letter')} />
-      </div>
+      </FinalSceneShell>
     )
   }
 
@@ -376,16 +363,9 @@ export default function Home() {
   // 완료 시 letter-reply 로 — 받은 편지에 짧은 사적 답장을 쓴다.
   if (phase === 'letter') {
     return (
-      <div className="relative w-screen h-screen bg-black">
-        <Room
-          modelPath={FINAL_MODEL}
-          onObjectClick={() => {}}
-          isInteractive={() => false}
-          disableControls
-          lighting="bright"
-        />
+      <FinalSceneShell>
         <LetterOverlay onComplete={() => setPhase('letter-reply')} />
-      </div>
+      </FinalSceneShell>
     )
   }
 
@@ -394,16 +374,9 @@ export default function Home() {
   // 완료 시 letter-compose 로 — 자기 자신의 편지(미래 풀용)를 쓴다.
   if (phase === 'letter-reply') {
     return (
-      <div className="relative w-screen h-screen bg-black">
-        <Room
-          modelPath={FINAL_MODEL}
-          onObjectClick={() => {}}
-          isInteractive={() => false}
-          disableControls
-          lighting="bright"
-        />
+      <FinalSceneShell>
         <LetterReplyOverlay onComplete={() => setPhase('letter-compose')} />
-      </div>
+      </FinalSceneShell>
     )
   }
 
@@ -411,34 +384,32 @@ export default function Home() {
   // → archive 공개 여부 결정. share=true 면 seed_letters 에 자기 편지가 입수됨.
   if (phase === 'letter-compose') {
     return (
-      <div className="relative w-screen h-screen bg-black">
-        <Room
-          modelPath={FINAL_MODEL}
-          onObjectClick={() => {}}
-          isInteractive={() => false}
-          disableControls
-          lighting="bright"
-        />
+      <FinalSceneShell>
         <LetterComposeOverlay onComplete={() => setPhase('card')} />
-      </div>
+      </FinalSceneShell>
     )
   }
 
   // Talisman card — 마지막 출력. PDF 미리보기 + 다운로드.
   if (phase === 'card') {
     return (
-      <div className="relative w-screen h-screen bg-black">
-        <Room
-          modelPath={FINAL_MODEL}
-          onObjectClick={() => {}}
-          isInteractive={() => false}
-          disableControls
-          lighting="bright"
-        />
+      <FinalSceneShell>
         <CardOverlay onComplete={() => setPhase('landing')} />
-      </div>
+      </FinalSceneShell>
     )
   }
 
   return null
+}
+
+// finalroom 5 phase 공통 셸 — Spline viewer 배경 + Spline 워터마크 가림.
+// landing 과 동일 패턴 (`bottom-right` 검정 박스).
+function FinalSceneShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative w-screen h-screen bg-black overflow-hidden">
+      <Spline scene={FINAL_SPLINE_SCENE} />
+      <div className="absolute bottom-0 right-0 w-40 h-12 bg-black z-50 pointer-events-none" />
+      {children}
+    </div>
+  )
 }
