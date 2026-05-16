@@ -4,7 +4,7 @@
 
 ## 0. Project framing
 
-The White Room (TWR) is a single-session journaling RPG that operationalises clinical defense-mechanism theory as game mechanics. The player traverses five 3D rooms, makes constrained choices, writes between-room journals, holds a closing dialogue with an LLM "voice," fills one blank-template sentence, receives a letter from a stranger, optionally replies, performs a three-line sealing ritual on departure, and ends with a printable talisman card. Every stage is logged, classified against a 28-defense codebook, and embedded for retrieval.
+The White Room (TWR) is a single-session journaling RPG that operationalises clinical defense-mechanism theory as game mechanics. The player traverses five 3D rooms, makes constrained choices, writes between-room journals, holds a closing dialogue with an LLM "voice," performs a three-line sealing ritual, receives a letter matched from a stranger, writes a private reply, composes their own letter (optionally entering it into the future matching pool), and ends with a printable talisman card. Every stage is logged, classified against a 28-defense codebook, and embedded for retrieval.
 
 The thesis tension the system holds: **AI quantification of inner life vs. the unquantifiable**. The same techniques the work critiques (defense labelling, embedding, similarity-based matching) are used as the engine. The product side (gallery, letter, card) is then deliberately stripped of clinical labels so the meta-critique surfaces.
 
@@ -12,19 +12,23 @@ The thesis tension the system holds: **AI quantification of inner life vs. the u
 
 | Layer | Technology |
 |---|---|
-| Frontend framework | Next.js 16 (App Router, server components for read paths, client components for R3F) |
-| 3D scene | React Three Fiber + drei (`OrbitControls`, `Environment`, GLB models per room) |
-| State | Zustand (`twr/stores/gameStore.ts`) — phase, choices, oracle words, room logs |
+| Frontend framework | Next.js 16.2.3 (App Router, server components for read paths, client components for R3F) |
+| Runtime | React 19.2 |
+| 3D scene (rooms 1–5) | React Three Fiber 9 + drei 10 (`OrbitControls`, `Environment`, GLB models per room) on `three` 0.183 |
+| 3D scene (landing) | `@splinetool/react-spline` 4 — Spline runtime renderer |
+| Finalroom backdrop | HTML5 `<video>` (`/subvideo.gif` intro freeze frame; previously Spline runtime / GLB) — Spline runtime was tried and dropped for stability |
+| State | Zustand 5 (`twr/stores/gameStore.ts`) — phase, choices, oracle words, room logs |
 | Styling | Tailwind v4 (utility-only, custom fonts: Instrument Serif + Zodiak) |
 | Backend | Next.js Route Handlers (`twr/app/api/*`) — single Vercel deploy |
 | Database | Supabase Postgres + `pgvector` (HNSW, `halfvec(3072)`) |
-| LLM (analysis) | Claude Opus 4.7 (`/api/journal-label`) |
+| LLM (analysis) | Claude Opus 4.7 (`/api/journal-label`, `twr/lib/sessionAnalysis.ts`) |
 | LLM (conversation) | Claude Sonnet 4.5 (`/api/conversation`) |
 | LLM (journal prompts) | Claude Sonnet 4.5 (`/api/journal-prompt`) |
 | LLM (mood extraction) | Claude Sonnet 4.5 (`twr/lib/moodExtraction.ts`) |
+| LLM safety | `twr/lib/anthropicSanitize.ts` — `stripLoneSurrogates()` + `buildAnthropicBody()` defend against orphan UTF-16 halves from player free text triggering Anthropic JSON parser 502s |
 | Embeddings | OpenAI `text-embedding-3-large` @ 3072d, stored as `halfvec(3072)` |
-| Image generation | Replicate Flux Schnell (`black-forest-labs/flux-schnell`, 4 steps, 2:3 PNG) |
-| PDF | `@react-pdf/renderer` (A6 portrait, two pages) |
+| Image generation | Replicate Flux Schnell (`black-forest-labs/flux-schnell`, 4 steps, 2:3 PNG, Edward Gorey "Fantod Pack" prompt style — see §9.4) |
+| PDF | `@react-pdf/renderer` 4 (A6 portrait, two pages); separate 50mm label PDF via `TalismanLabelPDF.tsx` |
 | QR | `qrcode` Node library, base64 data URL embedded in PDF |
 | Auth model | None. `crypto.randomUUID()` session id in `sessionStorage`; persistent `player_id` in `localStorage` |
 
@@ -32,8 +36,11 @@ The thesis tension the system holds: **AI quantification of inner life vs. the u
 
 ```
 landing → intro → room1..room5 → conversation
-       → blank_fill → letter → sealing → card
+       → sealing → letter (receive) → letter-reply
+       → letter-compose → card
 ```
+
+The phase enum lives in `twr/stores/gameStore.ts`. `blank_fill` no longer exists as a standalone phase: `SealingOverlay` mirrors its first answer to `/api/blank-fill` on submit so the downstream embedding contract (`blank_fill_responses.answer_embedding`, `primary_defense`) is preserved without an extra screen. The endgame is **receive-first** — the player reads a stranger's matched letter, writes a private reply, and only then composes their own letter for the future pool (migration `19_letter_reply_phase.sql`).
 
 ```mermaid
 flowchart TB
@@ -42,7 +49,7 @@ flowchart TB
   classDef ai       fill:#d6e2ec,stroke:#2c4863,color:#1a1a1a
   classDef artifact fill:#cdb89a,stroke:#3a3225,color:#1a1a1a
 
-  L[landing]:::phase --> IN[intro]:::phase
+  L[landing<br/>Spline]:::phase --> IN[intro<br/>video]:::phase
   IN --> R1[room 1]:::phase --> R2[room 2]:::phase --> R3[room 3]:::phase
   R3 --> R4[room 4]:::phase --> R5[room 5]:::phase
   R1 -.journal.-> R2
@@ -50,17 +57,18 @@ flowchart TB
   R3 -.journal.-> R4
   R4 -.journal.-> R5
   R5 -.journal.-> CV
-  CV[conversation<br/>Sonnet 4.5]:::ai --> BF[blank fill<br/>embed 3072d]:::ritual
-  BF --> LT[letter<br/>match RPC]:::ritual
-  LT --> SE[sealing ritual<br/>3 prompts]:::ritual
-  SE --> MX[mood extraction<br/>Sonnet 4.5]:::ai
-  MX --> IM[talisman image<br/>Flux Schnell]:::ai
+  CV[conversation<br/>subvideo intro<br/>Sonnet 4.5]:::ai --> SE[sealing ritual<br/>3 prompts<br/>mirror→blank_fill]:::ritual
+  SE --> LT[letter receive<br/>match RPC]:::ritual
+  LT --> LR[letter-reply<br/>private]:::ritual
+  LR --> LC[letter-compose<br/>embed 3072d<br/>+ share?]:::ritual
+  LC --> MX[mood extraction<br/>Sonnet 4.5]:::ai
+  MX --> IM[talisman image<br/>Flux Schnell<br/>Gorey style]:::ai
   IM --> PM[poem match<br/>match_poems RPC]:::ai
   PM --> CD[talisman PDF<br/>2× A6]:::artifact
   CD --> ENDP[print · share · gallery]:::phase
 ```
 
-Each transition between phases triggers DB writes (logged below). The 3D rooms themselves are not procedurally generated — they are hand-curated GLB models with named meshes; mesh names key into `twr/data/events.ts` for choice prompts.
+Each transition between phases triggers DB writes (logged below). The 3D rooms 1–5 are not procedurally generated — they are hand-curated GLB models with named meshes; mesh names key into `twr/data/events.ts` for choice prompts. The endgame scenes (sealing through card) share a single `FinalSceneShell` backdrop driven by an HTML5 `<video>` (see `FINAL_SCENE_VIDEO` in `twr/data/events.ts`); overlays stack on top.
 
 ### Phase responsibilities
 
@@ -68,15 +76,16 @@ Each transition between phases triggers DB writes (logged below). The 3D rooms t
 |---|---|---|---|
 | `room1`–`room5` | object click → choice pick (one of 3-4 options) | `/api/choices-rag` lookup snapshots labels into `narrative_logs` | `narrative_logs` (W), `choices_rag` (R) |
 | Inter-room transition | free-text journal (or skip / `·`) | `/api/journal-prompt` (Sonnet 4.5) generates a personalised prompt; client posts response back | `journals` (W), `narrative_logs` (R) |
-| `conversation` | 6-turn LLM dialogue | `/api/conversation` lazily computes `session_analysis`, picks film stimulus by primary defense, runs Sonnet 4.5 | `session_analysis` (R/W via `/api/journal-label`), `narrative_logs`/`journals` (R) |
-| `blank_fill` | one phrase fitting a template | `/api/blank-fill` embeds answer (3072d), aggregates defense from `narrative_logs` | `blank_fill_responses` (W), `blank_fill_templates` (R), `narrative_logs` (R) |
-| `letter` | reply / `·` (silence) / skip | `/api/letter` runs `match_letter_for_session` RPC (cosine top-5 random within defense lane) | `letter_exchanges` (W), `seed_letters` (R), `blank_fill_responses` (R) |
-| `sealing` | three blank-fill phrases (or "let it be" skip per line) | `/api/sealing-prompts` deterministic 3-pick from the `blank_fill_templates` pool; `/api/final-reflections` upserts each answer | `final_reflections` (W), `blank_fill_templates` (R) |
+| `conversation` | 6-turn LLM dialogue (subvideo intro plays once, freezes on last frame, then VoidDialogue fades in) | `/api/conversation` lazily computes `session_analysis`, picks film stimulus by primary defense, runs Sonnet 4.5 | `session_analysis` (R/W via `getOrCreateSessionAnalysis`), `narrative_logs`/`journals` (R) |
+| `sealing` | three blank-fill phrases (or "let it be" skip per line) | `/api/sealing-prompts` deterministic 3-pick from the `blank_fill_templates` pool; `/api/final-reflections` upserts each answer; first answer is mirrored to `/api/blank-fill` to populate the matching embedding | `final_reflections` (W), `blank_fill_templates` (R), `blank_fill_responses` (W via mirror) |
+| `letter` (receive) | acknowledge / read the matched letter | `/api/letter` runs `match_letter_for_session` RPC (cosine top-5 random within defense lane), pins `received_letter_id` on `letter_exchanges` | `letter_exchanges` (W), `seed_letters` (R), `blank_fill_responses` (R) |
+| `letter-reply` | short private reply to the received letter (or skip) | `/api/respond-to-letter` writes `reply_text` + `reply_at` onto `letter_exchanges`; reply **never** enters `seed_letters` | `letter_exchanges` (W) |
+| `letter-compose` | pick one sealing answer → memory prompt → write own letter → archive yes/no | `/api/compose-letter` embeds the composed letter (3072d halfvec) and stores `composed_letter` + `selected_template_id` + `selected_answer`; `/api/share-letter` then sets `share_choice` and (if true) runs `share_player_letter` RPC to insert into `seed_letters` as `source='player'` | `letter_exchanges` (W), `seed_letters` (W on share) |
 | `card` | print / save / share | `/api/card-bundle` orchestrates: mood extraction (Sonnet 4.5), `generate-card` (Flux), `find-poems` (poem RPC), QR encode | `generated_cards` (W), `final_reflections` (R), `narrative_logs`/`journals` (R), `poems_rag` (R), `letter_exchanges` (R) |
 
-## 3. Database schema (17 migrations)
+## 3. Database schema (19 migrations)
 
-Migrations live in `twr/dataset/sql/` numbered `01`–`17`. Three logical tiers:
+Migrations live in `twr/dataset/sql/` numbered `02`–`19`. Three logical tiers:
 
 ### 3.1 Reference / RAG tier (built once, read at runtime)
 
@@ -100,14 +109,21 @@ Every RAG table uses the same embedding contract: `text-embedding-3-large @ 3072
 | `journals` | `09` | up to 5 | Free-text journal between rooms (also includes the post-room-5 entry) |
 | `blank_fill_responses` | `10` | exactly 1 | Player's blank answer + 3072d embedding + aggregated `primary_defense` |
 | `final_reflections` | `17` | up to 3 | Sealing-ritual answers, one row per `(session_id, template_id)` from the shared `blank_fill_templates` pool |
-| `letter_exchanges` | `10` | exactly 1 | Which `seed_letters` row was matched, and the player's reply (or `·` sentinel) |
-| `seed_letters` | `10` + `13` | 0-1 (only on share) | If player opted to share their reply, it's ingested back as `source='player'` |
+| `letter_exchanges` | `10` + `18` + `19` | exactly 1 | Carries every letter-phase artifact for the session: `received_letter_id` (pinned match), `reply_text` + `reply_at` (private reply), `composed_letter` + `composed_letter_embedding halfvec(3072)` + `selected_template_id` + `selected_answer` + `composed_at`, and `share_choice` |
+| `seed_letters` | `10` + `13` | 0-1 (only on share) | If player opted to share their **composed** letter, it's ingested back as `source='player'`. The `blank_answer_embedding` column carries the composed-letter embedding for `source='player'` rows (column name kept for backward compat with v1 RPCs) |
 | `letter_replies` | `13` | 0-N | External replies from QR-shared letter readers (cross-session) |
-| `generated_cards` | `10` + `13` + `14` | exactly 1 | Talisman card row: image URL, prompt used, picked words, snapshotted poem, QR URL |
+| `generated_cards` | `10` + `13` + `14` | exactly 1 | Talisman card row: image URL, prompt used, picked words (mood phrases), snapshotted poem (`card_poem`, `card_poem_title`, `card_poem_author`), QR URL |
 | `cards` | `06` | 1 (legacy) | Earlier ensemble RAG result; kept for parity but `session_analysis` supersedes it for current flows |
 | `session_analysis` | `15` | exactly 1 | Unified end-of-session defense profile (Opus 4.7) — read by `/api/conversation` |
 
-### 3.3 Security tier
+### 3.3 Endgame extension migrations
+
+| Migration | Effect |
+|---|---|
+| `18_compose_letter.sql` | Adds `composed_letter*` / `selected_*` / `share_choice` / `composed_at` to `letter_exchanges`. Installs `match_letter_for_session_v2` (currently unused — kept for a future variant that re-matches on composed-letter embedding). Lane still comes from `blank_fill_responses.primary_defense` |
+| `19_letter_reply_phase.sql` | Adds `reply_at` and re-affirms `reply_text` on `letter_exchanges`. Documents the receive-first ordering: `/api/letter` (v1 RPC, keyed on `blank_fill_responses.answer_embedding`) fires **immediately after sealing** so a matched letter exists before the player ever composes |
+
+### 3.4 Security tier
 
 | Migration | Effect |
 |---|---|
@@ -137,10 +153,11 @@ What gets embedded:
 | `lit_rag.embedding` | clinical chunk text | Stream A retrieval (during R&D) |
 | `items_rag.embedding` | DSQ/DMRS item text | Stream A retrieval (during R&D) |
 | `poems_rag.embedding` | poem `content` | `match_poems` RPC for talisman page-2 poem |
-| `seed_letters.blank_answer_embedding` | the `blank_answer` phrase (**not** the letter body) | `match_letter_for_session` RPC |
-| `blank_fill_responses.answer_embedding` | the player's blank answer | matching key for both letter and poem |
+| `seed_letters.blank_answer_embedding` | the `blank_answer` phrase for `source='seed'` rows; the **composed letter body** for `source='player'` rows (column name preserved for back-compat) | `match_letter_for_session` RPC |
+| `blank_fill_responses.answer_embedding` | the player's first sealing answer (mirrored from `SealingOverlay` via `/api/blank-fill`) | matching key for letter (v1 RPC) |
+| `letter_exchanges.composed_letter_embedding` | the player's composed letter body (3072d halfvec) | dormant — reserved for `match_letter_for_session_v2` (mig. `18`) |
 
-Critically: **letter bodies are not embedded**. Letter matching is keyed entirely on the short blank-fill phrase. This was a deliberate choice to keep the matching surface tied to a single explicit player utterance rather than any AI-generated summary or the long letter prose.
+Letter matching today is keyed entirely on the short sealing-derived phrase for the seed pool. Player-archived letters re-enter the pool with their full-body embedding in the same column, so the matching space is mixed: short projective phrases (seed authors) and longer composed prose (past players). A v2 RPC variant that keys consistently on composed-letter embeddings is staged in migration `18` but not yet enabled.
 
 ## 5. Defense classification system
 
@@ -178,31 +195,34 @@ Defined in `twr/data/_tagging_vocab.ts` (referenced as `vocab@1.0`). Used in `ch
 | `choices_rag` rows | offline pipeline (Claude Sonnet) | once per content change |
 | `narrative_logs` rows | denormalised snapshot at insert time (joined from `choices_rag`) | per choice |
 | `journals.response` | currently unlabelled at insert; aggregated in `session_analysis` | end of game |
-| `blank_fill_responses.primary_defense` | weighted aggregation over `narrative_logs` (primary=1.0, secondary=0.5; argmax) | once at blank-fill submit |
-| `session_analysis.primary_defense` etc. | Claude Opus 4.7 reading all choices + journals, returning unified profile via tool-call schema | once at conversation phase entry |
+| `blank_fill_responses.primary_defense` | weighted aggregation over `narrative_logs` (primary=1.0, secondary=0.5; argmax) | once when `SealingOverlay` mirrors its first answer to `/api/blank-fill` |
+| `session_analysis.primary_defense` etc. | Claude Opus 4.7 reading all choices + journals, returning unified profile via tool-call schema | once at conversation phase entry (lazy `getOrCreateSessionAnalysis`) |
 
 
 ## 6. API endpoints (Route Handlers)
 
-All under `twr/app/api/*`. Single Vercel deploy, no separate backend.
+All under `twr/app/api/*`. Single Vercel deploy, no separate backend. The `choices_rag` lookup that used to be `/api/choices-rag` is now resolved client-side via `twr/lib/choicesIndex.ts` (~200 rows mirrored in-memory on page load) and written through `twr/lib/narrativeLog.ts` directly into `narrative_logs` using the anon publishable key under RLS. There is no longer a server round-trip per choice click.
 
 | Route | Method | Caller | Responsibility |
 |---|---|---|---|
-| `/api/choices-rag` | POST | room phases | Looks up the matching `choices_rag` row by `(prompt, label)` and returns the snapshot the client persists into `narrative_logs` |
-| `/api/journal-prompt` | POST | inter-room transition | Sonnet 4.5 reads recent `narrative_logs` and emits a personalised journal prompt |
+| `/api/journal-prompt` | POST | inter-room transition | Sonnet 4.5 reads recent `narrative_logs` and emits a personalised journal prompt. Accepts `seed_words` but currently ignores them (see `twr/ORACLE_WORDS.md`) |
 | `/api/journal-label` | POST | end of game / lazy | Opus 4.7 reads the full session and writes/updates `session_analysis` |
-| `/api/conversation` | POST | conversation phase | Sonnet 4.5 dialogue conditioned on `session_analysis.primary_defense` and a film-stimulus stem; up to 6 turns |
-| `/api/blank-fill` | POST | blank-fill phase | Embeds the player's answer (3072d), aggregates `primary_defense` from `narrative_logs`, writes `blank_fill_responses` |
-| `/api/letter` | POST | letter phase | Idempotent fetch/create via `match_letter_for_session` RPC; second call shape saves the reply |
-| `/api/share-letter` | POST | letter phase | Opt-in: copies the player's reply into `seed_letters` (`source='player'`) so the next stranger can match it |
-| `/api/letter-reply` | POST | QR landing page | External readers' replies land in `letter_replies` |
+| `/api/conversation` | POST | conversation phase | Sonnet 4.5 dialogue conditioned on `session_analysis.primary_defense` and a film-stimulus stem; up to 6 turns. Server uses `getOrCreateSessionAnalysis` to lazily compute the profile on first call |
 | `/api/sealing-prompts` | GET | sealing phase | Deterministic 3-pick from `blank_fill_templates` (`hashSeed(session_id+':a'/':b'/':c') % pool` with walk-forward distinctness) |
 | `/api/final-reflections` | POST/GET | sealing phase | Upserts one `final_reflections` row per `(session_id, template_id)`; validates `template_id` against the active pool |
+| `/api/blank-fill` | POST | sealing phase (mirror) | Called by `SealingOverlay` with the first sealing answer. Embeds the answer (3072d), aggregates `primary_defense` from `narrative_logs`, writes `blank_fill_responses`. The original standalone blank-fill phase is gone but the contract is preserved for `match_letter_for_session` |
+| `/api/letter` | POST | letter (receive) phase | Idempotent: first call runs `match_letter_for_session` RPC (cosine top-5 random within defense lane) and pins `received_letter_id` on `letter_exchanges`. Requires `blank_fill_responses` to exist (i.e. sealing must have run) |
+| `/api/respond-to-letter` | POST | letter-reply phase | Writes `reply_text` + `reply_at` onto `letter_exchanges`. Requires `received_letter_id`. Reply is **private** — never enters `seed_letters` |
+| `/api/compose-letter` | POST | letter-compose phase | Embeds the composed letter (3072d halfvec), persists `composed_letter` + `composed_letter_embedding` + `selected_template_id` + `selected_answer` + `composed_at` onto `letter_exchanges`. Resets `share_choice` to NULL. Returns 409 unless `received_letter_id` and `reply_text` already exist |
+| `/api/share-letter` | POST | letter-compose phase (after compose) | `share=true` sets `share_choice=true` and runs `share_player_letter` RPC to insert the composed letter into `seed_letters` as `source='player'`; returns `qr_url`. `share=false` just records the decision. Idempotent on repeat share=true |
+| `/api/letter-reply` | POST | QR landing page (external) | External readers' replies via QR scan land in `letter_replies` with `delivered=false`. Distinct from `/api/respond-to-letter` |
+| `/api/letter-inbox` | GET | gallery / author re-entry | Returns `letter_replies` for a `letter_id`, gated on the requester's persistent `player_id` matching the seed letter's `origin_player_id`. Marks fetched replies `delivered=true` |
 | `/api/find-poems` | POST | card phase | `match_poems` RPC top-1 within defense lane, falls back to no-filter top-1 |
-| `/api/generate-card` | POST | card phase | Builds Flux prompt from `defense_positive_framing` + picked words, calls Replicate, returns image URL |
-| `/api/card-bundle` | POST | card phase | Orchestrator: reads sealing answers, runs mood extraction (Sonnet 4.5), resolves image + poem + QR + DB insert into `generated_cards` |
-| `/api/public-letter/[id]` | GET | gallery / QR | Read-only access to a single shared letter (server-side, service_role) |
-| `/api/public-letters` | GET | gallery | Paginated read of `seed_letters` where `source='player'` |
+| `/api/generate-card` | POST | card phase | Builds Flux prompt from `defense_positive_framing` + picked mood words, calls Replicate Flux Schnell, returns image URL. Prompt block order is fixed (see `twr/CARD_GENERATION.md` §4) |
+| `/api/card-bundle` | POST | card phase | Orchestrator: reads sealing answers, runs `extractMoodWords` (Sonnet 4.5), resolves image + poem + QR + DB insert into `generated_cards`. Idempotent on PK conflict |
+| `/api/analyze-patterns` | POST | — | Stub (`{ ok: false, todo: true }`). Reserved for an offline RAG batch over `narrative_logs`; not in the live flow |
+
+Routes referenced in earlier drafts of this document — `/api/choices-rag`, `/api/public-letter/[id]`, `/api/public-letters` — no longer exist. The choice snapshot path moved client-side; the public letter page lives at `twr/app/letter/[id]/page.tsx` and reads Supabase directly under RLS rather than going through an API route.
 
 ## 7. Model usage
 
@@ -221,39 +241,54 @@ Model IDs are recorded per-row where it matters (`narrative_logs.model_version`,
 
 ## 8. Letter system
 
-### 8.1 Matching
+The letter system spans three player-facing phases (`letter` → `letter-reply` → `letter-compose`) plus two external touchpoints (QR landing, author inbox). All five phases write to a single `letter_exchanges` row, pinned at first match and updated in place.
 
-`match_letter_for_session(query_embedding, session_id, defense_filter, exclude_blank_answer, top_k)` (migration `12`):
+### 8.1 Matching (receive)
 
-1. Read `blank_fill_responses` for `session_id` → `(answer_embedding, primary_defense)`.
+`match_letter_for_session(query_embedding, session_id, defense_filter, exclude_blank_answer, top_k)` (migration `12`, still v1 — `match_letter_for_session_v2` from migration `18` is installed but unused):
+
+1. Read `blank_fill_responses` for `session_id` → `(answer_embedding, primary_defense)`. This row exists because `SealingOverlay` mirrored the first sealing answer through `/api/blank-fill` immediately before the letter phase started.
 2. Cosine-rank all `seed_letters` rows where `primary_defense = defense_filter` and `origin_session_id != session_id` and `blank_answer != exclude_blank_answer`.
-3. Take top-`k` (default 5), pick one at random for variety, pin into `letter_exchanges`.
-4. Fallback (`*_any`): if defense lane returns nothing, drop the defense filter and repeat.
+3. Take top-`k` (default 5), pick one at random for variety, pin into `letter_exchanges.received_letter_id`.
+4. Fallback (`*_any`): if the defense lane returns nothing, drop the defense filter and repeat.
 
-The pin is idempotent: the same `session_id` always sees the same letter on subsequent visits.
+The pin is idempotent — the same `session_id` always sees the same matched letter on subsequent visits.
 
-### 8.2 Seed pool
+### 8.2 Private reply
+
+After receiving, the player writes a short reply through `LetterReplyOverlay` → `/api/respond-to-letter`. The reply is stored as `letter_exchanges.reply_text` + `reply_at` and is **never** propagated to `seed_letters`. It exists only on the session row; the only external read path is `/api/letter-inbox`, gated on the original author's `player_id`.
+
+### 8.3 Composed letter (future pool)
+
+In the `letter-compose` phase the player:
+
+1. Picks one of their three sealing answers as a seed phrase.
+2. Receives a memory-prompt scaffold (UI-side, no LLM).
+3. Writes their own letter to a future stranger.
+4. Chooses whether to archive it.
+
+`/api/compose-letter` embeds the composed letter (`text-embedding-3-large` 3072d → `halfvec(3072)`) and writes `composed_letter`, `composed_letter_embedding`, `selected_template_id`, `selected_answer`, `composed_at`. `share_choice` is reset to NULL on every compose call so `/api/share-letter` remains the single explicit gate for archive insertion.
+
+### 8.4 Seed pool and self-extension
 
 - `twr/dataset/processed/seed_letters.json` — currently 37 hand-written letters.
 - Backup of fuller original set: `seed_letters.full84.bak.json` (84 rows).
 - Each letter has: `primary_defense`, `author_pseudonym`, `blank_template_id`, `blank_answer`, `letter_text`, embedding of `blank_answer`.
 - Defense coverage is uneven across 28 lanes — many lanes contain a single letter, so the unfiltered fallback is exercised regularly.
 
-### 8.3 Self-extension
+`share_player_letter(session_id)` RPC (migration `13`) ingests the player's **composed** letter (not the private reply) as a new `seed_letters` row with `source='player'`. The composed letter's embedding lands in the `blank_answer_embedding` column (name preserved for back-compat with the v1 RPC) and `letter_text` carries the composed text. The pool grows as a function of opt-in archives.
 
-`share_player_letter(session_id)` RPC (migration `13`) ingests the player's `reply_text` as a new `seed_letters` row with `source='player'`, reusing the player's `blank_answer` and `answer_embedding` as the matching key. No re-embedding of `reply_text`; no LLM extraction. The pool grows as a function of opt-in shares.
+### 8.5 QR loop
 
-### 8.4 QR loop
-
-Each shared letter gets a public URL `${NEXT_PUBLIC_BASE_URL}/letter/[id]`. The talisman card embeds this URL as a QR code generated server-side (`qrcode` lib → base64 data URL → PDF). External visitors can leave a reply via `/api/letter-reply` which writes to `letter_replies`.
+Each shared letter gets a public URL `${NEXT_PUBLIC_BASE_URL}/letter/[id]`. The talisman card embeds this URL as a QR code generated server-side (`qrcode` lib → base64 data URL → PDF). External visitors can leave a reply via `/api/letter-reply` which writes to `letter_replies` (`delivered=false`). The original author retrieves these via `/api/letter-inbox`, gated on persistent `player_id`; successful fetches flip `delivered=true`.
 
 ## 9. Card / talisman generation
 
-The card phase begins with the **sealing ritual** (a short three-line departure rite) and ends with `/api/card-bundle` orchestrating image, poem, mood fragments, and QR into a printable two-page PDF.
+The endgame is a chain: **sealing ritual** → letter receive → letter reply → letter compose → card. The card phase itself is the final orchestration via `/api/card-bundle` over image, poem, mood fragments, and QR into a printable two-page PDF. See `twr/CARD_GENERATION.md` for the full pipeline-level walkthrough.
 
 ### 9.1 Sealing ritual
 
-`SealingOverlay.tsx` runs immediately after the letter phase and before the card. The ritual reuses the projective `blank_fill_templates` pool (10 active templates, see migration `11`) — no new vocabulary or clinical framing is introduced.
+`SealingOverlay.tsx` runs **immediately after the conversation phase**, before any letter phase. Its first answer is also mirrored to `/api/blank-fill` so that the downstream embedding contract (used by `match_letter_for_session`) is populated without exposing a separate blank-fill screen to the player. The ritual reuses the projective `blank_fill_templates` pool (10 active templates, see migration `11`) — no new vocabulary or clinical framing is introduced.
 
 ```mermaid
 flowchart LR
@@ -331,19 +366,21 @@ flowchart TB
 
 ### 9.3 PDF layout (Option X)
 
-`twr/components/TalismanPDF.tsx` renders two A6 portrait pages.
+`twr/components/TalismanPDF.tsx` renders two A6 portrait pages. A separate `TalismanLabelPDF.tsx` renders a 50mm square label variant.
 
 | Page | Content |
 |---|---|
 | 1 | Talisman image (centered) · the three sealing-ritual lines in italic serif (submission order) · 4–7 mood fragments scattered/faded around the margin · no defense label, no clinical framing |
-| 2 | Matched poem · the player's letter reply · QR linking to the public letter (if shared) |
+| 2 | Matched poem · the player's **composed letter** (not the private reply) · QR linking to the public letter URL (if archived via `/api/share-letter`) |
 
-Typography: Instrument Serif for literary content (sealing lines, mood fragments, poem, reply), Zodiak for system/HUD metadata (timestamps, IDs).
+Typography: Instrument Serif for literary content (sealing lines, mood fragments, poem, composed letter), Zodiak for system/HUD metadata (timestamps, IDs).
+
+The private reply (`letter_exchanges.reply_text`) is **not** on the PDF — it stays on the session row, retrievable only by the original letter's author via `/api/letter-inbox`.
 
 
 ## 10. Public gallery (Infinity Wall)
 
-`twr/app/letters/page.tsx` renders shared player letters in a 3D scrollable wall built with R3F. Each letter is a card-mesh; clicking opens a `LetterDetailCard` overlay with the poem snapshot and reply, mirroring the talisman PDF's layout. The gallery reads from `/api/public-letters` (paginated, server-side, service_role) so the publishable key never sees `seed_letters` directly.
+`twr/app/letters/page.tsx` renders shared player letters in a 3D scrollable wall built with R3F. Each letter is a card-mesh; clicking opens a `LetterDetailCard` overlay with the poem snapshot and composed letter, mirroring the talisman PDF's page 2 layout. The gallery reads `seed_letters` (where `source='player'`) directly through the anon publishable key under RLS — there is no `/api/public-letters` route anymore. The individual letter detail page at `twr/app/letter/[id]/page.tsx` does the same.
 
 Like the talisman, the detail card carries no clinical defense name — only the letter text, optional poem, and pseudonym (when present from the seed pool).
 
@@ -354,10 +391,11 @@ A single Unicode middle dot `·` (U+00B7) is used across the system as a sentine
 | Site | Meaning of `·` |
 |---|---|
 | Journal response | The player chose to skip but acknowledged the prompt |
-| Letter reply | The player read the stranger's letter and chose silence |
-| Blank-fill | (rejected — blank-fill requires a phrase) |
+| Letter reply (private) | The player read the stranger's letter and chose silence; `reply_text = '·'` |
+| Letter compose | (rejected — composing requires a phrase) |
+| Sealing line | Each of the 3 lines accepts `·` or a "let it be" skip; skip writes nothing |
 
-`·` rows still pass through the same pipelines (embedding, matching) but are visually rendered as a minimal mark. This preserves the unquantifiable: silence is a recorded act, not absence.
+`·` rows still pass through the same pipelines (embedding, matching where applicable) but are visually rendered as a minimal mark. This preserves the unquantifiable: silence is a recorded act, not absence.
 
 ## 12. Security & RLS
 
@@ -372,7 +410,8 @@ Current production policy set is in `twr/dataset/sql/16_runtime_rls_enable.sql`.
 | `cards` | same as above | Per-session isolation |
 | `choices_rag` | public read | Reference data; no PII |
 | `poems_rag` / `items_rag` / `lit_rag` | public read | Reference data |
-| `seed_letters` / `letter_replies` / `generated_cards` / `session_analysis` / `final_reflections` | service_role only | Read/write via server routes only |
+| `seed_letters` | public read where `source='player'` | Gallery + `/letter/[id]` reads under anon |
+| `letter_replies` / `generated_cards` / `session_analysis` / `final_reflections` | service_role only | Read/write via server routes only |
 
 Browser client (`twr/lib/supabase.ts`) attaches the `x-session-id` header on every request. The header value is sourced from `sessionStorage` so a refresh keeps the same session. Server routes that need to bypass RLS (writing letters, reading the seed pool, inserting cards) instantiate a service-role client locally.
 
@@ -413,37 +452,53 @@ The system retains its records (RLS-isolated, per session) so the producer of th
 twr/
 ├── app/
 │   ├── api/
-│   │   ├── blank-fill/route.ts
-│   │   ├── card-bundle/route.ts
-│   │   ├── choices-rag/route.ts
-│   │   ├── conversation/route.ts
-│   │   ├── final-reflections/route.ts (sealing answers upsert)
+│   │   ├── analyze-patterns/route.ts   (stub — reserved)
+│   │   ├── blank-fill/route.ts         (mirrored from SealingOverlay)
+│   │   ├── card-bundle/route.ts        (talisman orchestrator)
+│   │   ├── compose-letter/route.ts     (letter-compose: embed + persist)
+│   │   ├── conversation/route.ts       (6-turn Sonnet 4.5)
+│   │   ├── final-reflections/route.ts  (sealing answers upsert)
 │   │   ├── find-poems/route.ts
-│   │   ├── generate-card/route.ts
-│   │   ├── journal-label/route.ts
-│   │   ├── journal-prompt/route.ts
-│   │   ├── letter/route.ts
-│   │   ├── letter-reply/route.ts
-│   │   ├── public-letter/[id]/route.ts
-│   │   ├── public-letters/route.ts
-│   │   ├── sealing-prompts/route.ts   (deterministic 3-pick from blank_fill_templates)
-│   │   └── share-letter/route.ts
-│   ├── letters/page.tsx               (Infinity Wall gallery)
-│   ├── letter/[id]/page.tsx           (QR landing)
-│   └── page.tsx                       (landing → game)
+│   │   ├── generate-card/route.ts      (Flux Schnell)
+│   │   ├── journal-label/route.ts      (Opus 4.7 session analysis)
+│   │   ├── journal-prompt/route.ts     (inter-room Sonnet 4.5)
+│   │   ├── letter/route.ts             (receive — match RPC)
+│   │   ├── letter-inbox/route.ts       (author-only reply inbox)
+│   │   ├── letter-reply/route.ts       (external QR reply)
+│   │   ├── respond-to-letter/route.ts  (private internal reply)
+│   │   ├── sealing-prompts/route.ts    (deterministic 3-pick)
+│   │   └── share-letter/route.ts       (compose → archive opt-in)
+│   ├── letters/page.tsx                (Infinity Wall gallery)
+│   ├── letter/[id]/page.tsx            (QR landing)
+│   └── page.tsx                        (landing → game)
 ├── components/
-│   ├── Room.tsx                       (R3F scene per GLB)
-│   ├── SealingOverlay.tsx             (3-line departure ritual)
-│   ├── TalismanPDF.tsx                (PDF generator)
-│   └── LetterDetailCard.tsx           (gallery overlay)
+│   ├── Room.tsx                        (R3F scene per GLB; glow registry)
+│   ├── RoomIntro.tsx                   (per-room title fade-in)
+│   ├── EventOverlay.tsx                (object-click choice picker)
+│   ├── JournalingOverlay.tsx           (inter-room free-text)
+│   ├── CollectedWordsPanel.tsx         (oracle word ribbon)
+│   ├── VoidDialogue.tsx                (6-turn conversation UI)
+│   ├── SealingOverlay.tsx              (3-line departure ritual)
+│   ├── LetterOverlay.tsx               (receive)
+│   ├── LetterReplyOverlay.tsx          (private reply)
+│   ├── LetterComposeOverlay.tsx        (own letter + archive choice)
+│   ├── CardOverlay.tsx                 (card-bundle trigger)
+│   ├── TalismanPDF.tsx                 (A6 ×2 PDF)
+│   ├── TalismanLabelPDF.tsx            (50mm label variant)
+│   ├── LetterGallery.tsx               (Infinity Wall R3F scene)
+│   └── LetterDetailCard.tsx            (gallery overlay)
+│   # finalroom backdrop (<video src={FINAL_SCENE_VIDEO}>) and
+│   # the subvideo conversation intro are inlined in app/page.tsx
+│   # rather than extracted into their own components.
 ├── data/
-│   ├── events.ts                      (ROOM_ENTRY_EVENTS, ITEMS, ROOM_MODELS)
-│   ├── _tagging_vocab.ts              (vocab@1.0)
-│   └── defense_positive_framing.json  (28-defense → framing_en + image_seed)
+│   ├── events.ts                       (ROOM_ENTRY_EVENTS, ITEMS, ROOM_MODELS, FINAL_SCENE_VIDEO)
+│   ├── _tagging_vocab.ts               (vocab@1.0)
+│   ├── oracleWordPool.ts               (80 phrases × 8 categories — see ORACLE_WORDS.md)
+│   └── defense_positive_framing.json   (28-defense → framing_en + image_seed)
 ├── dataset/
 │   ├── processed/
-│   │   ├── defense_codebook.json      (28 entries)
-│   │   ├── seed_letters.json          (37 letters)
+│   │   ├── defense_codebook.json       (28 entries)
+│   │   ├── seed_letters.json           (37 letters)
 │   │   └── seed_letters.full84.bak.json
 │   ├── scripts/
 │   │   ├── build_defense_codebook.py
@@ -463,22 +518,44 @@ twr/
 │       ├── 14_card_poem_fields.sql
 │       ├── 15_session_analysis.sql
 │       ├── 16_runtime_rls_enable.sql
-│       └── 17_final_reflections.sql   (sealing-ritual table)
+│       ├── 17_final_reflections.sql    (sealing-ritual table)
+│       ├── 18_compose_letter.sql       (composed_* + v2 RPC stub)
+│       └── 19_letter_reply_phase.sql   (reply_at + receive-first docs)
 ├── lib/
-│   ├── moodExtraction.ts              (Sonnet 4.5 → 4-7 symbolic phrases)
-│   └── supabase.ts                    (client w/ x-session-id header)
+│   ├── anthropicSanitize.ts            (lone-surrogate stripper + body builder)
+│   ├── choicesIndex.ts                 (client-side choices_rag mirror)
+│   ├── narrativeLog.ts                 (per-choice narrative_logs writer)
+│   ├── moodExtraction.ts               (Sonnet 4.5 → 4-7 symbolic phrases)
+│   ├── sessionAnalysis.ts              (Opus 4.7 lazy compute / getOrCreateSessionAnalysis)
+│   ├── embeddings.ts                   (OpenAI text-embedding-3-large helper)
+│   ├── prompts.ts                      (shared prompt-template helpers)
+│   ├── assets.ts                       (Supabase Storage URL resolver)
+│   ├── session.ts                      (getSessionId / getPlayerId)
+│   ├── useIdleTracker.ts               (idle detection hook)
+│   └── supabase.ts                     (client w/ x-session-id header)
 ├── stores/
-│   └── gameStore.ts                   (Zustand: phase, choices, oracle words)
+│   └── gameStore.ts                    (Zustand: phase, choices, oracle words)
 ├── public/
-│   └── models/                        (r1.glb … r5.glb, finalroom.glb)
-├── AGENTS.md                          (Next.js 16 breaking-change notes)
-└── CLAUDE.md                          (coding rules → @AGENTS.md)
+│   ├── models/                         (r1.glb … r5.glb)
+│   ├── assets/                         (R4 poster hi-res PNGs)
+│   └── subvideo.gif                    (conversation intro)
+├── TECH_OVERVIEW.md                    (this file)
+├── CARD_GENERATION.md                  (talisman pipeline deep dive)
+├── ORACLE_WORDS.md                     (in-game word-fragment system)
+├── AGENTS.md                           (Next.js 16 breaking-change notes)
+└── CLAUDE.md                           (coding rules → @AGENTS.md)
 ```
+
+### Companion documents
+
+- **`twr/CARD_GENERATION.md`** — full talisman generation pipeline: `extractMoodWords` → `generate-card` (Flux) → `find-poems` → QR → `@react-pdf/renderer`. Includes the Gorey-style prompt block order and idempotency semantics.
+- **`twr/ORACLE_WORDS.md`** — in-game word fragments collected from `EventOverlay` choices and surfaced in the journaling overlay. Documents the current behaviour where `/api/journal-prompt` accepts but ignores `seed_words`.
+- **`twr/ARCHITECTURE_DEEP.md`** — code walkthrough with file:line references for one full playthrough (landing → R1 mount → choice → narrative_logs INSERT → … → card PDF). Targeted at developer onboarding / re-entry.
 
 ## 16. Open notes for the paper
 
 - **Defense lane sparsity**: the seed letter pool covers some lanes thinly; the `_any` fallback fires often. A larger curated pool or LLM-augmented seed would reduce this, at the cost of provenance.
 - **Cross-lingual embedding**: `text-embedding-3-large` handles KO/EN in one space, but same-language matches are systematically closer. Currently uncontrolled.
-- **No re-embedding of player replies**: player letters re-enter the pool keyed on the original `blank_answer` embedding, not the body. Trade-off: matching surface stays small and explicit; richness of the reply is invisible to retrieval.
+- **Composed-letter embedding is dormant on the matching side**: `/api/compose-letter` re-embeds the player's own letter (3072d halfvec) and `share_player_letter` archives it. But the live matching RPC (`match_letter_for_session`, v1) still keys on `blank_fill_responses.answer_embedding`, so the composed-letter embedding is currently write-only. `match_letter_for_session_v2` exists in migration `18` as the scaffold for a future variant that ranks against the composed letter directly; it is not yet wired into `/api/letter`.
 - **No auth**: per-session isolation via header, not identity. Adequate for the artifact's threat model (a one-session journaling experience), inadequate for any persistent account model.
 - **Opus 4.7 for analysis only**: the cost-bearing single deep read is centralised; everything else (conversation, prompts) runs on Sonnet 4.5.
