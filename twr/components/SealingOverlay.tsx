@@ -2,12 +2,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { getSessionId, getPlayerId } from '@/lib/session'
 
-// Sealing ritual phase. Sits between LetterOverlay and CardOverlay.
-// Three fill-in prompts deterministically picked from blank_fill_templates
-// (via /api/sealing-prompts), one at a time. Each submission posts to
-// /api/final-reflections by template_id. Per-prompt skip ("let it be")
-// leaves no row. After all three (submitted or skipped), onComplete
-// advances to card.
+// Sealing ritual phase. Sits between ConversationScene and LetterComposeOverlay
+// (compose-first flow). Three fill-in prompts deterministically picked from
+// blank_fill_templates (via /api/sealing-prompts), one at a time. Each
+// submission posts to /api/final-reflections by template_id. Per-prompt
+// skip ("let it be") leaves no row. First non-skipped answer is also
+// mirrored to /api/blank-fill (fire-and-forget) to populate
+// blank_fill_responses.primary_defense — the lane signal used by the
+// v2 letter match RPC. After all three, onComplete advances to letter-compose.
 
 interface SealingOverlayProps {
   onComplete: () => void

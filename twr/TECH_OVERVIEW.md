@@ -36,11 +36,11 @@ The thesis tension the system holds: **AI quantification of inner life vs. the u
 
 ```
 landing → intro → room1..room5 → conversation
-       → sealing → letter (receive) → letter-reply
-       → letter-compose → card
+       → sealing → letter-compose → letter (receive)
+       → letter-reply → card
 ```
 
-The phase enum lives in `twr/stores/gameStore.ts`. `blank_fill` no longer exists as a standalone phase: `SealingOverlay` mirrors its first answer to `/api/blank-fill` on submit so the downstream embedding contract (`blank_fill_responses.answer_embedding`, `primary_defense`) is preserved without an extra screen. The endgame is **receive-first** — the player reads a stranger's matched letter, writes a private reply, and only then composes their own letter for the future pool (migration `19_letter_reply_phase.sql`).
+The phase enum lives in `twr/stores/gameStore.ts`. `blank_fill` no longer exists as a standalone phase: `SealingOverlay` mirrors its first answer to `/api/blank-fill` on submit so the lane signal (`blank_fill_responses.primary_defense`) is preserved without an extra screen. The endgame is **compose-first** — the player writes their own letter immediately after sealing; that letter's 3072d embedding becomes the matching key for `match_letter_for_session_v2`, which then surfaces a stranger's letter from the seed/player pool. A private reply follows. This inversion exists so matching keys off the player's full prose rather than a single sealing phrase.
 
 ```mermaid
 flowchart TB
@@ -58,10 +58,10 @@ flowchart TB
   R4 -.journal.-> R5
   R5 -.journal.-> CV
   CV[conversation<br/>subvideo intro<br/>Sonnet 4.5]:::ai --> SE[sealing ritual<br/>3 prompts<br/>mirror→blank_fill]:::ritual
-  SE --> LT[letter receive<br/>match RPC]:::ritual
+  SE --> LC[letter-compose<br/>embed 3072d<br/>+ share?]:::ritual
+  LC --> LT[letter receive<br/>v2 match RPC]:::ritual
   LT --> LR[letter-reply<br/>private]:::ritual
-  LR --> LC[letter-compose<br/>embed 3072d<br/>+ share?]:::ritual
-  LC --> MX[mood extraction<br/>Sonnet 4.5]:::ai
+  LR --> MX[mood extraction<br/>Sonnet 4.5]:::ai
   MX --> IM[talisman image<br/>Flux Schnell<br/>Gorey style]:::ai
   IM --> PM[poem match<br/>match_poems RPC]:::ai
   PM --> CD[talisman PDF<br/>2× A6]:::artifact
@@ -77,10 +77,10 @@ Each transition between phases triggers DB writes (logged below). The 3D rooms 1
 | `room1`–`room5` | object click → choice pick (one of 3-4 options) | `/api/choices-rag` lookup snapshots labels into `narrative_logs` | `narrative_logs` (W), `choices_rag` (R) |
 | Inter-room transition | free-text journal (or skip / `·`) | `/api/journal-prompt` (Sonnet 4.5) generates a personalised prompt; client posts response back | `journals` (W), `narrative_logs` (R) |
 | `conversation` | 6-turn LLM dialogue (subvideo intro plays once, freezes on last frame, then VoidDialogue fades in) | `/api/conversation` lazily computes `session_analysis`, picks film stimulus by primary defense, runs Sonnet 4.5 | `session_analysis` (R/W via `getOrCreateSessionAnalysis`), `narrative_logs`/`journals` (R) |
-| `sealing` | three blank-fill phrases (or "let it be" skip per line) | `/api/sealing-prompts` deterministic 3-pick from the `blank_fill_templates` pool; `/api/final-reflections` upserts each answer; first answer is mirrored to `/api/blank-fill` to populate the matching embedding | `final_reflections` (W), `blank_fill_templates` (R), `blank_fill_responses` (W via mirror) |
-| `letter` (receive) | acknowledge / read the matched letter | `/api/letter` runs `match_letter_for_session` RPC (cosine top-5 random within defense lane), pins `received_letter_id` on `letter_exchanges` | `letter_exchanges` (W), `seed_letters` (R), `blank_fill_responses` (R) |
+| `sealing` | three blank-fill phrases (or "let it be" skip per line) | `/api/sealing-prompts` deterministic 3-pick from the `blank_fill_templates` pool; `/api/final-reflections` upserts each answer; first answer is mirrored to `/api/blank-fill` to populate the lane signal (`primary_defense`) | `final_reflections` (W), `blank_fill_templates` (R), `blank_fill_responses` (W via mirror) |
+| `letter-compose` | pick one sealing answer → memory prompt → write own letter → archive yes/no | `/api/compose-letter` embeds the composed letter (3072d halfvec) and upserts `letter_exchanges` (this is the row's first write in compose-first flow) with `composed_letter` + `composed_letter_embedding` + `selected_template_id` + `selected_answer`; `/api/share-letter` then sets `share_choice` and (if true) runs `share_player_letter` RPC to insert into `seed_letters` as `source='player'` | `letter_exchanges` (W), `seed_letters` (W on share) |
+| `letter` (receive) | acknowledge / read the matched letter | `/api/letter` runs `match_letter_for_session_v2` RPC (cosine top-5 random within defense lane, keyed on `composed_letter_embedding`), pins `received_letter_id` on `letter_exchanges` | `letter_exchanges` (W), `seed_letters` (R), `blank_fill_responses` (R for lane) |
 | `letter-reply` | short private reply to the received letter (or skip) | `/api/respond-to-letter` writes `reply_text` + `reply_at` onto `letter_exchanges`; reply **never** enters `seed_letters` | `letter_exchanges` (W) |
-| `letter-compose` | pick one sealing answer → memory prompt → write own letter → archive yes/no | `/api/compose-letter` embeds the composed letter (3072d halfvec) and stores `composed_letter` + `selected_template_id` + `selected_answer`; `/api/share-letter` then sets `share_choice` and (if true) runs `share_player_letter` RPC to insert into `seed_letters` as `source='player'` | `letter_exchanges` (W), `seed_letters` (W on share) |
 | `card` | print / save / share | `/api/card-bundle` orchestrates: mood extraction (Sonnet 4.5), `generate-card` (Flux), `find-poems` (poem RPC), QR encode | `generated_cards` (W), `final_reflections` (R), `narrative_logs`/`journals` (R), `poems_rag` (R), `letter_exchanges` (R) |
 
 ## 3. Database schema (19 migrations)
@@ -110,7 +110,7 @@ Every RAG table uses the same embedding contract: `text-embedding-3-large @ 3072
 | `blank_fill_responses` | `10` | exactly 1 | Player's blank answer + 3072d embedding + aggregated `primary_defense` |
 | `final_reflections` | `17` | up to 3 | Sealing-ritual answers, one row per `(session_id, template_id)` from the shared `blank_fill_templates` pool |
 | `letter_exchanges` | `10` + `18` + `19` | exactly 1 | Carries every letter-phase artifact for the session: `received_letter_id` (pinned match), `reply_text` + `reply_at` (private reply), `composed_letter` + `composed_letter_embedding halfvec(3072)` + `selected_template_id` + `selected_answer` + `composed_at`, and `share_choice` |
-| `seed_letters` | `10` + `13` | 0-1 (only on share) | If player opted to share their **composed** letter, it's ingested back as `source='player'`. The `blank_answer_embedding` column carries the composed-letter embedding for `source='player'` rows (column name kept for backward compat with v1 RPCs) |
+| `seed_letters` | `10` + `13` + `18` | 0-1 (only on share) | If player opted to share their **composed** letter, it's ingested back as `source='player'`. The `blank_answer_embedding` column carries the composed-letter embedding for `source='player'` rows (column name kept for RPC compatibility) |
 | `letter_replies` | `13` | 0-N | External replies from QR-shared letter readers (cross-session) |
 | `generated_cards` | `10` + `13` + `14` | exactly 1 | Talisman card row: image URL, prompt used, picked words (mood phrases), snapshotted poem (`card_poem`, `card_poem_title`, `card_poem_author`), QR URL |
 | `cards` | `06` | 1 (legacy) | Earlier ensemble RAG result; kept for parity but `session_analysis` supersedes it for current flows |
@@ -120,8 +120,8 @@ Every RAG table uses the same embedding contract: `text-embedding-3-large @ 3072
 
 | Migration | Effect |
 |---|---|
-| `18_compose_letter.sql` | Adds `composed_letter*` / `selected_*` / `share_choice` / `composed_at` to `letter_exchanges`. Installs `match_letter_for_session_v2` (currently unused — kept for a future variant that re-matches on composed-letter embedding). Lane still comes from `blank_fill_responses.primary_defense` |
-| `19_letter_reply_phase.sql` | Adds `reply_at` and re-affirms `reply_text` on `letter_exchanges`. Documents the receive-first ordering: `/api/letter` (v1 RPC, keyed on `blank_fill_responses.answer_embedding`) fires **immediately after sealing** so a matched letter exists before the player ever composes |
+| `18_compose_letter.sql` | Adds `composed_letter*` / `selected_*` / `share_choice` / `composed_at` to `letter_exchanges`. Installs `match_letter_for_session_v2` + `_v2_any` (defense-filtered + unfiltered fallback). Both v2 RPCs key on `letter_exchanges.composed_letter_embedding`; lane (when filtered) still comes from `blank_fill_responses.primary_defense`. Also rewrites `share_player_letter` RPC to ingest the composed letter (rather than the reply) into `seed_letters` |
+| `19_letter_reply_phase.sql` | Adds `reply_at` and re-affirms `reply_text` on `letter_exchanges`. Header comments describe the compose-first runtime ordering (see §8) and which RPCs are live vs dormant |
 
 ### 3.4 Security tier
 
@@ -153,11 +153,11 @@ What gets embedded:
 | `lit_rag.embedding` | clinical chunk text | Stream A retrieval (during R&D) |
 | `items_rag.embedding` | DSQ/DMRS item text | Stream A retrieval (during R&D) |
 | `poems_rag.embedding` | poem `content` | `match_poems` RPC for talisman page-2 poem |
-| `seed_letters.blank_answer_embedding` | the `blank_answer` phrase for `source='seed'` rows; the **composed letter body** for `source='player'` rows (column name preserved for back-compat) | `match_letter_for_session` RPC |
-| `blank_fill_responses.answer_embedding` | the player's first sealing answer (mirrored from `SealingOverlay` via `/api/blank-fill`) | matching key for letter (v1 RPC) |
-| `letter_exchanges.composed_letter_embedding` | the player's composed letter body (3072d halfvec) | dormant — reserved for `match_letter_for_session_v2` (mig. `18`) |
+| `seed_letters.blank_answer_embedding` | the `blank_answer` phrase for `source='seed'` rows; the **composed letter body** for `source='player'` rows (column name preserved for back-compat) | `match_letter_for_session_v2` RPC |
+| `blank_fill_responses.answer_embedding` | the player's first sealing answer (mirrored from `SealingOverlay` via `/api/blank-fill`) | unused for matching since v2 flip; `primary_defense` derived from this row still drives lane filtering |
+| `letter_exchanges.composed_letter_embedding` | the player's composed letter body (3072d halfvec) | **current matching key** via `match_letter_for_session_v2` |
 
-Letter matching today is keyed entirely on the short sealing-derived phrase for the seed pool. Player-archived letters re-enter the pool with their full-body embedding in the same column, so the matching space is mixed: short projective phrases (seed authors) and longer composed prose (past players). A v2 RPC variant that keys consistently on composed-letter embeddings is staged in migration `18` but not yet enabled.
+**Dual-embedding asymmetry (open issue).** The v2 RPC compares the player's composed letter (~200-600 chars) against `seed_letters.blank_answer_embedding`. For `source='player'` rows that column holds the composed letter body — symmetric long↔long matching. For `source='seed'` rows (the 37 hand-written letters in `dataset/processed/seed_letters.json`, loaded via `13_embed_upload_seed_letters.py`) the column still holds the embedding of the **short blank_answer phrase** (~5 words). The pool is therefore mixed, and until the seed rows are re-embedded against `letter_text`, cross-source matches lean on whatever signal survives the length asymmetry. A backfill that re-embeds `letter_text` into the same column for `source='seed'` is the cleanest fix and is low-cost (37 rows × `text-embedding-3-large`).
 
 ## 5. Defense classification system
 
@@ -210,11 +210,11 @@ All under `twr/app/api/*`. Single Vercel deploy, no separate backend. The `choic
 | `/api/conversation` | POST | conversation phase | Sonnet 4.5 dialogue conditioned on `session_analysis.primary_defense` and a film-stimulus stem; up to 6 turns. Server uses `getOrCreateSessionAnalysis` to lazily compute the profile on first call |
 | `/api/sealing-prompts` | GET | sealing phase | Deterministic 3-pick from `blank_fill_templates` (`hashSeed(session_id+':a'/':b'/':c') % pool` with walk-forward distinctness) |
 | `/api/final-reflections` | POST/GET | sealing phase | Upserts one `final_reflections` row per `(session_id, template_id)`; validates `template_id` against the active pool |
-| `/api/blank-fill` | POST | sealing phase (mirror) | Called by `SealingOverlay` with the first sealing answer. Embeds the answer (3072d), aggregates `primary_defense` from `narrative_logs`, writes `blank_fill_responses`. The original standalone blank-fill phase is gone but the contract is preserved for `match_letter_for_session` |
-| `/api/letter` | POST | letter (receive) phase | Idempotent: first call runs `match_letter_for_session` RPC (cosine top-5 random within defense lane) and pins `received_letter_id` on `letter_exchanges`. Requires `blank_fill_responses` to exist (i.e. sealing must have run) |
-| `/api/respond-to-letter` | POST | letter-reply phase | Writes `reply_text` + `reply_at` onto `letter_exchanges`. Requires `received_letter_id`. Reply is **private** — never enters `seed_letters` |
-| `/api/compose-letter` | POST | letter-compose phase | Embeds the composed letter (3072d halfvec), persists `composed_letter` + `composed_letter_embedding` + `selected_template_id` + `selected_answer` + `composed_at` onto `letter_exchanges`. Resets `share_choice` to NULL. Returns 409 unless `received_letter_id` and `reply_text` already exist |
+| `/api/blank-fill` | POST | sealing phase (mirror) | Called by `SealingOverlay` with the first sealing answer. Embeds the answer (3072d), aggregates `primary_defense` from `narrative_logs`, writes `blank_fill_responses`. The original standalone blank-fill phase is gone — the row exists only so `primary_defense` (lane signal) is available to `match_letter_for_session_v2` |
+| `/api/compose-letter` | POST | letter-compose phase (first letter endpoint) | Embeds the composed letter (3072d halfvec), **upserts** `letter_exchanges` with `composed_letter` + `composed_letter_embedding` + `selected_template_id` + `selected_answer` + `composed_at`. Creates the row in compose-first flow. Resets `share_choice` to NULL |
 | `/api/share-letter` | POST | letter-compose phase (after compose) | `share=true` sets `share_choice=true` and runs `share_player_letter` RPC to insert the composed letter into `seed_letters` as `source='player'`; returns `qr_url`. `share=false` just records the decision. Idempotent on repeat share=true |
+| `/api/letter` | POST | letter (receive) phase | Idempotent: first call runs `match_letter_for_session_v2` RPC (cosine top-5 random within defense lane, keyed on `composed_letter_embedding`) and pins `received_letter_id` on `letter_exchanges`. Returns 425 if `composed_letter_embedding` is not yet present |
+| `/api/respond-to-letter` | POST | letter-reply phase | Writes `reply_text` + `reply_at` onto `letter_exchanges`. Requires `received_letter_id`. Reply is **private** — never enters `seed_letters` |
 | `/api/letter-reply` | POST | QR landing page (external) | External readers' replies via QR scan land in `letter_replies` with `delivered=false`. Distinct from `/api/respond-to-letter` |
 | `/api/letter-inbox` | GET | gallery / author re-entry | Returns `letter_replies` for a `letter_id`, gated on the requester's persistent `player_id` matching the seed letter's `origin_player_id`. Marks fetched replies `delivered=true` |
 | `/api/find-poems` | POST | card phase | `match_poems` RPC top-1 within defense lane, falls back to no-filter top-1 |
@@ -241,42 +241,44 @@ Model IDs are recorded per-row where it matters (`narrative_logs.model_version`,
 
 ## 8. Letter system
 
-The letter system spans three player-facing phases (`letter` → `letter-reply` → `letter-compose`) plus two external touchpoints (QR landing, author inbox). All five phases write to a single `letter_exchanges` row, pinned at first match and updated in place.
+The letter system spans three player-facing phases (`letter-compose` → `letter` → `letter-reply`) plus two external touchpoints (QR landing, author inbox). All five surfaces write to a single `letter_exchanges` row, created by compose-letter and updated in place by every subsequent endpoint.
 
-### 8.1 Matching (receive)
+### 8.1 Compose (write own letter first)
 
-`match_letter_for_session(query_embedding, session_id, defense_filter, exclude_blank_answer, top_k)` (migration `12`, still v1 — `match_letter_for_session_v2` from migration `18` is installed but unused):
-
-1. Read `blank_fill_responses` for `session_id` → `(answer_embedding, primary_defense)`. This row exists because `SealingOverlay` mirrored the first sealing answer through `/api/blank-fill` immediately before the letter phase started.
-2. Cosine-rank all `seed_letters` rows where `primary_defense = defense_filter` and `origin_session_id != session_id` and `blank_answer != exclude_blank_answer`.
-3. Take top-`k` (default 5), pick one at random for variety, pin into `letter_exchanges.received_letter_id`.
-4. Fallback (`*_any`): if the defense lane returns nothing, drop the defense filter and repeat.
-
-The pin is idempotent — the same `session_id` always sees the same matched letter on subsequent visits.
-
-### 8.2 Private reply
-
-After receiving, the player writes a short reply through `LetterReplyOverlay` → `/api/respond-to-letter`. The reply is stored as `letter_exchanges.reply_text` + `reply_at` and is **never** propagated to `seed_letters`. It exists only on the session row; the only external read path is `/api/letter-inbox`, gated on the original author's `player_id`.
-
-### 8.3 Composed letter (future pool)
-
-In the `letter-compose` phase the player:
+In `letter-compose` the player:
 
 1. Picks one of their three sealing answers as a seed phrase.
 2. Receives a memory-prompt scaffold (UI-side, no LLM).
 3. Writes their own letter to a future stranger.
-4. Chooses whether to archive it.
+4. Chooses whether to archive it (`/api/share-letter`).
 
-`/api/compose-letter` embeds the composed letter (`text-embedding-3-large` 3072d → `halfvec(3072)`) and writes `composed_letter`, `composed_letter_embedding`, `selected_template_id`, `selected_answer`, `composed_at`. `share_choice` is reset to NULL on every compose call so `/api/share-letter` remains the single explicit gate for archive insertion.
+`/api/compose-letter` embeds the composed letter (`text-embedding-3-large` 3072d → `halfvec(3072)`) and **upserts** `letter_exchanges` — this is the row's first write in compose-first flow. Persisted fields: `composed_letter`, `composed_letter_embedding`, `selected_template_id`, `selected_answer`, `composed_at`. `share_choice` is reset to NULL on every compose call so `/api/share-letter` remains the single explicit gate for archive insertion.
+
+### 8.2 Matching (receive)
+
+`match_letter_for_session_v2(p_session_id)` (migration `18`), with `*_v2_any` as the unfiltered fallback:
+
+1. Read `letter_exchanges` for `session_id` → `composed_letter_embedding`. This row exists because compose-letter ran first.
+2. Read `blank_fill_responses.primary_defense` for the lane filter (mirrored by `SealingOverlay`).
+3. Cosine-rank all `seed_letters` rows where `primary_defense = me.primary_defense` and `origin_session_id != session_id` (or NULL for `source='seed'`).
+4. Take top-5, pick one at random for variety, pin into `letter_exchanges.received_letter_id`.
+5. Fallback (`_v2_any`): if the defense lane returns nothing, drop the defense filter and repeat.
+
+The pin is idempotent — the same `session_id` always sees the same matched letter on subsequent visits. `/api/letter` returns `425` while `composed_letter_embedding` is still being written (defensive — the compose submit is awaited client-side).
+
+### 8.3 Private reply
+
+After receiving, the player writes a short reply through `LetterReplyOverlay` → `/api/respond-to-letter`. The reply is stored as `letter_exchanges.reply_text` + `reply_at` and is **never** propagated to `seed_letters`. It exists only on the session row; the only external read path is `/api/letter-inbox`, gated on the original author's `player_id`.
 
 ### 8.4 Seed pool and self-extension
 
 - `twr/dataset/processed/seed_letters.json` — currently 37 hand-written letters.
 - Backup of fuller original set: `seed_letters.full84.bak.json` (84 rows).
-- Each letter has: `primary_defense`, `author_pseudonym`, `blank_template_id`, `blank_answer`, `letter_text`, embedding of `blank_answer`.
+- Each letter has: `primary_defense`, `author_pseudonym`, `blank_template_id`, `blank_answer`, `letter_text`. The current `13_embed_upload_seed_letters.py` script embeds `blank_answer` into `blank_answer_embedding`.
 - Defense coverage is uneven across 28 lanes — many lanes contain a single letter, so the unfiltered fallback is exercised regularly.
+- **v2 caveat**: seed rows are short-phrase-embedded while player rows are full-body-embedded (see §4 dual-embedding asymmetry). Re-embedding `letter_text` for the 37 seeds into the same column is the recommended backfill before v2 ships to playtest.
 
-`share_player_letter(session_id)` RPC (migration `13`) ingests the player's **composed** letter (not the private reply) as a new `seed_letters` row with `source='player'`. The composed letter's embedding lands in the `blank_answer_embedding` column (name preserved for back-compat with the v1 RPC) and `letter_text` carries the composed text. The pool grows as a function of opt-in archives.
+`share_player_letter(session_id)` RPC (migration `18`, rewritten from `13`) ingests the player's **composed** letter as a new `seed_letters` row with `source='player'`. The composed letter's embedding lands in `blank_answer_embedding` (name preserved for RPC compatibility) and `letter_text` carries the composed text. The pool grows as a function of opt-in archives.
 
 ### 8.5 QR loop
 
@@ -284,11 +286,11 @@ Each shared letter gets a public URL `${NEXT_PUBLIC_BASE_URL}/letter/[id]`. The 
 
 ## 9. Card / talisman generation
 
-The endgame is a chain: **sealing ritual** → letter receive → letter reply → letter compose → card. The card phase itself is the final orchestration via `/api/card-bundle` over image, poem, mood fragments, and QR into a printable two-page PDF. See `twr/CARD_GENERATION.md` for the full pipeline-level walkthrough.
+The endgame is a chain: **sealing ritual** → letter compose → letter receive → letter reply → card. The card phase itself is the final orchestration via `/api/card-bundle` over image, poem, mood fragments, and QR into a printable two-page PDF. See `twr/CARD_GENERATION.md` for the full pipeline-level walkthrough.
 
 ### 9.1 Sealing ritual
 
-`SealingOverlay.tsx` runs **immediately after the conversation phase**, before any letter phase. Its first answer is also mirrored to `/api/blank-fill` so that the downstream embedding contract (used by `match_letter_for_session`) is populated without exposing a separate blank-fill screen to the player. The ritual reuses the projective `blank_fill_templates` pool (10 active templates, see migration `11`) — no new vocabulary or clinical framing is introduced.
+`SealingOverlay.tsx` runs **immediately after the conversation phase**, before any letter phase. Its first answer is also mirrored to `/api/blank-fill` so the lane signal (`blank_fill_responses.primary_defense`) used by `match_letter_for_session_v2` is populated without exposing a separate blank-fill screen to the player. The ritual reuses the projective `blank_fill_templates` pool (10 active templates, see migration `11`) — no new vocabulary or clinical framing is introduced.
 
 ```mermaid
 flowchart LR
@@ -519,8 +521,8 @@ twr/
 │       ├── 15_session_analysis.sql
 │       ├── 16_runtime_rls_enable.sql
 │       ├── 17_final_reflections.sql    (sealing-ritual table)
-│       ├── 18_compose_letter.sql       (composed_* + v2 RPC stub)
-│       └── 19_letter_reply_phase.sql   (reply_at + receive-first docs)
+│       ├── 18_compose_letter.sql       (composed_* + v2 RPCs + rewritten share)
+│       └── 19_letter_reply_phase.sql   (reply_at; compose-first header)
 ├── lib/
 │   ├── anthropicSanitize.ts            (lone-surrogate stripper + body builder)
 │   ├── choicesIndex.ts                 (client-side choices_rag mirror)
@@ -556,6 +558,6 @@ twr/
 
 - **Defense lane sparsity**: the seed letter pool covers some lanes thinly; the `_any` fallback fires often. A larger curated pool or LLM-augmented seed would reduce this, at the cost of provenance.
 - **Cross-lingual embedding**: `text-embedding-3-large` handles KO/EN in one space, but same-language matches are systematically closer. Currently uncontrolled.
-- **Composed-letter embedding is dormant on the matching side**: `/api/compose-letter` re-embeds the player's own letter (3072d halfvec) and `share_player_letter` archives it. But the live matching RPC (`match_letter_for_session`, v1) still keys on `blank_fill_responses.answer_embedding`, so the composed-letter embedding is currently write-only. `match_letter_for_session_v2` exists in migration `18` as the scaffold for a future variant that ranks against the composed letter directly; it is not yet wired into `/api/letter`.
+- **Seed pool dual-embedding asymmetry**: with v2 live, `seed_letters.blank_answer_embedding` is the embedding of the short `blank_answer` phrase for `source='seed'` rows but the long composed-letter body for `source='player'` rows. The matching space is therefore mixed in length/style. The 37 seed letters should be re-embedded against `letter_text` for symmetry — low-cost backfill, no schema change.
 - **No auth**: per-session isolation via header, not identity. Adequate for the artifact's threat model (a one-session journaling experience), inadequate for any persistent account model.
 - **Opus 4.7 for analysis only**: the cost-bearing single deep read is centralised; everything else (conversation, prompts) runs on Sonnet 4.5.

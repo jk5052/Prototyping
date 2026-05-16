@@ -3,18 +3,19 @@ import { useEffect, useRef, useState } from 'react'
 import { getSessionId, getPlayerId } from '@/lib/session'
 
 // Letter-reply phase. Sits between LetterOverlay (receive) and
-// LetterComposeOverlay (compose own). The player has just read a
-// stranger's letter; this overlay lets them write a small, private
-// reply directed at that letter.
+// CardOverlay (compose-first flow — the player wrote their own letter
+// before receiving). The player has just read a stranger's letter
+// matched against their composed letter; this overlay lets them write
+// a small, private reply directed at that letter.
 //
 // Side effects:
-//   GET  /api/letter      → re-fetches the pinned letter for context
+//   POST /api/letter      → re-fetches the pinned letter for context
 //                          (idempotent on the server; same row returns).
 //   POST /api/respond-to-letter → saves reply_text + reply_at onto
 //                          letter_exchanges. reply_text NEVER enters
 //                          seed_letters; this is a private response,
 //                          not an archive contribution.
-// onComplete advances to LetterComposeOverlay.
+// onComplete advances to CardOverlay.
 
 interface LetterReplyOverlayProps {
   onComplete: () => void

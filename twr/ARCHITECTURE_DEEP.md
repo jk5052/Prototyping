@@ -74,40 +74,40 @@ After R5's journaling completes, `phase = 'conversation'`. This is the first end
 |---|---|---|
 | Prompts | `SealingOverlay.tsx:53` → `GET /api/sealing-prompts?session_id=...` | Server uses `hashSeed(session_id + ':a'/':b'/':c') % pool` with walk-forward distinctness (`app/api/sealing-prompts/route.ts:21`). Deterministic per session |
 | Per-line submit | `SealingOverlay.tsx:76` → `POST /api/final-reflections` | Upsert `(session_id, template_id) → answer_text` |
-| Mirror | `SealingOverlay.tsx:89`–`101` | First **non-skipped** answer is fire-and-forget POSTed to `/api/blank-fill`, which embeds the answer (3072d → halfvec) and aggregates `primary_defense` from `narrative_logs`. This row is what `match_letter_for_session` reads next |
-| Complete | `SealingOverlay.tsx` → `onComplete` | `setPhase('letter')` |
+| Mirror | `SealingOverlay.tsx:89`–`101` | First **non-skipped** answer is fire-and-forget POSTed to `/api/blank-fill`, which embeds the answer (3072d → halfvec) and aggregates `primary_defense` from `narrative_logs`. The `primary_defense` written here is the lane signal read by `match_letter_for_session_v2` later |
+| Complete | `SealingOverlay.tsx` → `onComplete` | `setPhase('letter-compose')` |
 
 ---
 
-## 6. Letter chain — receive → reply → compose
+## 6. Letter chain — compose → receive → reply
 
-Three back-to-back phases, each rendered inside `FinalSceneShell` (the `<video>` backdrop, `app/page.tsx:418`).
+Three back-to-back phases, each rendered inside `FinalSceneShell` (the `<video>` backdrop, `app/page.tsx:418`). The order is **compose-first**: the player writes their own letter before they receive one, so the matching query is the player's full prose rather than a single sealing phrase.
 
-### 6.1 Receive (`phase='letter'`)
-
-| Step | File / line | What happens |
-|---|---|---|
-| Match | `LetterOverlay.tsx` → `POST /api/letter` | Server reads `blank_fill_responses` for the session, runs `match_letter_for_session` RPC (cosine top-5 random within defense lane, `_any` fallback). Pins `letter_exchanges.received_letter_id`. Idempotent — same session always sees the same letter |
-| Display | `LetterOverlay.tsx` | Renders the matched `seed_letters.letter_text` + pseudonym. No defense label shown |
-| Continue | `LetterOverlay.tsx` → `onComplete` | `setPhase('letter-reply')` |
-
-### 6.2 Private reply (`phase='letter-reply'`)
-
-| Step | File / line | What happens |
-|---|---|---|
-| Compose | `LetterReplyOverlay.tsx` → `POST /api/respond-to-letter` | Writes `letter_exchanges.reply_text` + `reply_at`. 409 if `received_letter_id` is missing. `·` is accepted as silence |
-| Privacy | — | `reply_text` is **never** propagated to `seed_letters`. Only the original letter's author can read it back via `/api/letter-inbox` (gated on `player_id`) |
-| Continue | `LetterReplyOverlay.tsx` → `onComplete` | `setPhase('letter-compose')` |
-
-### 6.3 Composed letter for the future pool (`phase='letter-compose'`)
+### 6.1 Compose (`phase='letter-compose'`)
 
 | Step | File / line | What happens |
 |---|---|---|
 | Pick seed | `LetterComposeOverlay.tsx` | Reads the player's three `final_reflections` answers, lets them pick one as the seed phrase |
 | Memory prompt | `LetterComposeOverlay.tsx` | UI-side scaffold; no LLM call |
-| Compose | `LetterComposeOverlay.tsx` → `POST /api/compose-letter` | Server embeds the composed letter (`text-embedding-3-large` 3072d → `halfvec(3072)`) and writes `composed_letter`, `composed_letter_embedding`, `selected_template_id`, `selected_answer`, `composed_at`. Resets `share_choice` to NULL |
-| Archive opt-in | `LetterComposeOverlay.tsx` → `POST /api/share-letter` | `share=true` runs `share_player_letter` RPC to insert into `seed_letters` (`source='player'`) and returns `qr_url`. `share=false` just records the decision |
-| Continue | `LetterComposeOverlay.tsx` → `onComplete` | `setPhase('card')` |
+| Compose | `LetterComposeOverlay.tsx` → `POST /api/compose-letter` | Server embeds the composed letter (`text-embedding-3-large` 3072d → `halfvec(3072)`) and **upserts** `letter_exchanges` (this is the row's first write in compose-first flow) with `composed_letter`, `composed_letter_embedding`, `selected_template_id`, `selected_answer`, `composed_at`. Resets `share_choice` to NULL |
+| Archive opt-in | `LetterComposeOverlay.tsx` → `POST /api/share-letter` | `share=true` runs `share_player_letter` RPC to insert the composed letter into `seed_letters` (`source='player'`) and returns `qr_url`. `share=false` just records the decision |
+| Continue | `LetterComposeOverlay.tsx` → `onComplete` | `setPhase('letter')` |
+
+### 6.2 Receive (`phase='letter'`)
+
+| Step | File / line | What happens |
+|---|---|---|
+| Match | `LetterOverlay.tsx` → `POST /api/letter` | Server reads `letter_exchanges.composed_letter_embedding` for the session, runs `match_letter_for_session_v2` RPC (cosine top-5 random within defense lane via `blank_fill_responses.primary_defense`, `_v2_any` fallback). Pins `letter_exchanges.received_letter_id`. Returns `425` if `composed_letter_embedding` is not yet written. Idempotent — same session always sees the same letter |
+| Display | `LetterOverlay.tsx` | Renders the matched `seed_letters.letter_text` + pseudonym. No defense label shown |
+| Continue | `LetterOverlay.tsx` → `onComplete` | `setPhase('letter-reply')` |
+
+### 6.3 Private reply (`phase='letter-reply'`)
+
+| Step | File / line | What happens |
+|---|---|---|
+| Compose | `LetterReplyOverlay.tsx` → `POST /api/respond-to-letter` | Writes `letter_exchanges.reply_text` + `reply_at`. 409 if `received_letter_id` is missing. `·` is accepted as silence |
+| Privacy | — | `reply_text` is **never** propagated to `seed_letters`. Only the original letter's author can read it back via `/api/letter-inbox` (gated on `player_id`) |
+| Continue | `LetterReplyOverlay.tsx` → `onComplete` | `setPhase('card')` |
 
 ---
 
@@ -136,14 +136,14 @@ External replies via QR land in `letter_replies` (`/api/letter-reply`). The auth
 
 ## 9. The two embedding boundaries
 
-The system has two distinct embedding entry points and they currently feed different downstream code paths:
+The system has two distinct embedding entry points and they feed different downstream code paths:
 
 | Entry | What's embedded | Stored in | Read by |
 |---|---|---|---|
-| `/api/blank-fill` (mirrored from `SealingOverlay`) | first sealing answer | `blank_fill_responses.answer_embedding` (halfvec 3072) | `match_letter_for_session` (v1, live) |
-| `/api/compose-letter` | composed letter body | `letter_exchanges.composed_letter_embedding` (halfvec 3072); also copied into `seed_letters.blank_answer_embedding` for `source='player'` rows by `share_player_letter` | `match_letter_for_session_v2` — staged in migration `18`, not wired into `/api/letter` |
+| `/api/blank-fill` (mirrored from `SealingOverlay`) | first sealing answer | `blank_fill_responses.answer_embedding` (halfvec 3072) | nothing live — the `primary_defense` aggregate on the same row is the only field still read (by `match_letter_for_session_v2` for lane filtering) |
+| `/api/compose-letter` | composed letter body | `letter_exchanges.composed_letter_embedding` (halfvec 3072); also copied into `seed_letters.blank_answer_embedding` for `source='player'` rows by `share_player_letter` | `match_letter_for_session_v2` (live) |
 
-The implication: today's matching mixes seed authors (short blank phrase) with past players (full composed prose) in the same vector space and column. A v2 variant that keys consistently on composed letters is one route-handler edit away from going live.
+The implication: today's matching space is mixed. `source='player'` rows in `seed_letters` carry the full composed-letter embedding; `source='seed'` rows (the 37 hand-written seeds) still carry the short `blank_answer` phrase embedding. Re-embedding `letter_text` for the seed rows is the cleanest symmetry fix and is low-cost (37 rows × `text-embedding-3-large`).
 
 ---
 
@@ -153,8 +153,9 @@ The implication: today's matching mixes seed authors (short blank phrase) with p
 |---|---|
 | R3 chair / R4 mirror disappeared | `Room.tsx` glow registry — confirm `baseScale: Vector3` (not number) is being preserved through `useFrame` (`Room.tsx` end-of-file changelog) |
 | R4 poster blurry on zoom | `app/page.tsx:212`–`220` swap layer; `public/assets/poster_*.png` must exist |
-| Conversation phase shows black screen | `/subvideo.gif` deployed? `ConversationScene` has a 5.5s hard timer; if the GIF 404s the timer still fires and `VoidDialogue` appears over black |
-| Letter phase 409 | `blank_fill_responses` row missing — sealing's first-answer mirror did not run or failed. Check `bfPostedRef` in `SealingOverlay.tsx:46` |
+| Conversation phase shows black screen | `/subvideo.mp4` deployed? `ConversationScene` waits for the video's `onEnded` to fade in `VoidDialogue`; if the MP4 404s the dialogue never appears |
+| Letter phase 425 | `letter_exchanges.composed_letter_embedding` not yet written — the compose phase did not finish (or the embedding call is still in flight). `/api/compose-letter` must complete before `/api/letter` is hit |
+| Letter phase 409 (legacy) | `blank_fill_responses` row missing — sealing's first-answer mirror did not run or failed. Check `bfPostedRef` in `SealingOverlay.tsx:46`; without `primary_defense` the v2 RPC falls through to `_v2_any` |
 | Card phase hangs | `/api/card-bundle` orchestration order in `app/api/card-bundle/route.ts`; isolate by hitting `/api/generate-card` and `/api/find-poems` independently |
 | Anthropic 502 on free-text routes | Lone UTF-16 surrogate in player input — confirm the route calls `buildAnthropicBody` from `lib/anthropicSanitize.ts` |
 

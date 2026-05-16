@@ -2,11 +2,9 @@
 //   POST { session_id, player_id?, selected_template_id, selected_answer,
 //          composed_letter }
 //     embeds the composed letter (text-embedding-3-large 3072d halfvec)
-//     and persists the composed fields on letter_exchanges. The row
-//     itself is created earlier by /api/letter (receive phase), so this
-//     endpoint updates in place rather than upserting.
-//   Returns 409 if /api/letter has not yet pinned a received_letter_id,
-//   or if /api/respond-to-letter has not yet recorded reply_text.
+//     and persists the composed fields on letter_exchanges. Runs in
+//     compose-first order — this is the entry point that creates the
+//     row, before /api/letter receives a match keyed on this embedding.
 //   share_choice is reset to NULL on each call so /api/share-letter
 //   remains the explicit gate for archive insertion.
 import { createClient } from '@supabase/supabase-js'
@@ -54,20 +52,6 @@ export async function POST(request: Request) {
 
   const sup = createClient(url, secret, { auth: { persistSession: false, autoRefreshToken: false } })
 
-  // Gate: receive + reply must have run first so the row + ordering invariant exist.
-  const { data: ex, error: exErr } = await sup
-    .from('letter_exchanges')
-    .select('received_letter_id, reply_text')
-    .eq('session_id', body.session_id)
-    .maybeSingle()
-  if (exErr) return Response.json({ error: 'letter_exchanges read failed: ' + exErr.message }, { status: 500 })
-  if (!ex || !ex.received_letter_id) {
-    return Response.json({ error: 'receive a letter before composing' }, { status: 409 })
-  }
-  if (!ex.reply_text || !ex.reply_text.toString().trim()) {
-    return Response.json({ error: 'reply to the received letter before composing' }, { status: 409 })
-  }
-
   // Validate the template exists and is active — surface a clean 400.
   const { data: tpl, error: tplErr } = await sup
     .from('blank_fill_templates')
@@ -97,13 +81,16 @@ export async function POST(request: Request) {
   }
   const halfvecLiteral = '[' + vec.join(',') + ']'
 
-  // Update the existing row. The receive + reply gates above guarantee
-  // it exists. Preserves received_letter_id / reply_text / reply_at.
-  // share_choice is reset to NULL so the player must decide again via
-  // /api/share-letter on every re-compose.
+  // Upsert: compose-letter is the first endpoint in the endgame letter
+  // chain (compose-first flow), so the row may not exist yet. On re-
+  // compose, /api/letter may already have pinned received_letter_id —
+  // we explicitly omit it from the SET clause so it survives, but on
+  // a fresh insert it stays NULL until /api/letter runs. share_choice
+  // is reset to NULL so the player must decide again via /api/share-letter.
   const { error: upErr } = await sup
     .from('letter_exchanges')
-    .update({
+    .upsert({
+      session_id:                 body.session_id,
       player_id:                  body.player_id ?? null,
       selected_template_id:       body.selected_template_id,
       selected_answer:            selectedAnswer,
@@ -111,10 +98,9 @@ export async function POST(request: Request) {
       composed_letter_embedding:  halfvecLiteral,
       composed_at:                new Date().toISOString(),
       share_choice:               null,
-    })
-    .eq('session_id', body.session_id)
+    }, { onConflict: 'session_id' })
   if (upErr) {
-    return Response.json({ error: 'letter_exchanges update failed: ' + upErr.message }, { status: 500 })
+    return Response.json({ error: 'letter_exchanges upsert failed: ' + upErr.message }, { status: 500 })
   }
 
   return Response.json({ ok: true })

@@ -2,10 +2,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { getSessionId, getPlayerId } from '@/lib/session'
 
-// Letter-compose phase. Sits between LetterReplyOverlay and CardOverlay.
-// The player has already received a letter and written a private reply
-// to it; this phase invites them to compose their own letter — which
-// optionally joins the future matching pool.
+// Letter-compose phase. Sits between SealingOverlay and LetterOverlay
+// (compose-first flow). The player writes their own letter first; its
+// embedding then becomes the matching key for /api/letter (v2 RPC).
 //
 // Flow (spec):
 //   1. Show the player's three sealing answers back to them.
@@ -13,7 +12,7 @@ import { getSessionId, getPlayerId } from '@/lib/session'
 //   3. Show a writing prompt that quotes the picked phrase.
 //   4. Player writes a short text — this becomes their letter.
 //   5. Player decides whether the letter enters the anonymous archive.
-//   6. onComplete → card.
+//   6. onComplete → letter (receive matched on this composed letter).
 //
 // Side effects:
 //   step 'select' — no API call. The pick is held locally and only sent
@@ -23,7 +22,7 @@ import { getSessionId, getPlayerId } from '@/lib/session'
 //   step 'write'  — POST /api/compose-letter once with
 //     { selected_template_id, selected_answer, composed_letter }.
 //     The endpoint embeds the composed letter (3072d halfvec) and
-//     updates letter_exchanges (the row already exists from receive).
+//     upserts letter_exchanges (creates the row in compose-first flow).
 //   step 'share'  — POST /api/share-letter with { share }. share=false
 //     records the choice without inserting into seed_letters.
 //     share=true triggers share_player_letter RPC which copies the

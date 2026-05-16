@@ -1,26 +1,40 @@
 -- ============================================================
--- The White Room — receive-first letter flow
---   Reorders the endgame back to "receive a stranger's letter,
---   write a small reply to it, then compose your own letter for
---   the future pool":
+-- The White Room — letter-reply phase (compose-first runtime)
+--   Adds the reply_at timestamp on letter_exchanges and
+--   re-affirms reply_text. The schema additions in this file
+--   are order-agnostic; the runtime ordering described below
+--   reflects the live code (compose-first), which is the
+--   inverse of an earlier draft of this header.
+--
+--   Live endgame order (app/page.tsx, post-flip):
 --     sealing(3)
---       → letter        (receive matched, display only)
---       → letter-reply  (private reply to the received letter)
---       → letter-compose (write your own + share?)
+--       → letter-compose (write own letter, embed, share?)
+--       → letter         (receive match keyed on composed_letter_embedding)
+--       → letter-reply   (private reply to the received letter)
 --       → card
 --
---   Column meanings on letter_exchanges (clarified):
+--   Column meanings on letter_exchanges:
+--     composed_letter / composed_letter_embedding
+--                      = the player's own letter, written first.
+--                        Embedding becomes the matching key for
+--                        match_letter_for_session_v2 (mig. 18).
+--                        Eligible for sharing into seed_letters
+--                        when share_choice = true.
+--     received_letter_id
+--                      = pinned match from the v2 RPC.
 --     reply_text       = private response to the received letter.
 --                        NEVER inserted into seed_letters.
 --                        Lives only on this row.
---     composed_letter  = the player's own letter, eligible for
---                        sharing into seed_letters when
---                        share_choice = true.
+--     reply_at         = timestamp the reply was written (added below).
 --
---   Matching keys on blank_fill_responses.answer_embedding /
---   primary_defense (v1 RPC from 12_letter_match_rpc.sql), so
---   /api/letter can run immediately after sealing, before any
---   composed_letter exists.
+--   Matching (runtime):
+--     /api/letter calls match_letter_for_session_v2 from
+--     18_compose_letter.sql, keyed on
+--     letter_exchanges.composed_letter_embedding. Lane filter
+--     (primary_defense) still comes from blank_fill_responses
+--     (mirrored by SealingOverlay → /api/blank-fill).
+--     The v1 RPCs in 12_letter_match_rpc.sql are no longer
+--     called by /api/letter but remain installed.
 --
 -- Run AFTER 18_compose_letter.sql in Supabase SQL Editor.
 -- ============================================================
@@ -33,19 +47,19 @@ alter table public.letter_exchanges
 alter table public.letter_exchanges
   add column if not exists reply_text text;
 
--- (2) v1 RPCs reused as-is for the receive-first match --------
---   public.match_letter_for_session(p_session_id uuid)
---   public.match_letter_for_session_any(p_session_id uuid)
---   defined in 12_letter_match_rpc.sql — no changes here.
---
---   v2 RPCs from 18_compose_letter.sql remain installed but are
---   no longer called by /api/letter. They are kept available for
---   future variants (e.g. re-matching based on composed letter).
+-- (2) Matching RPCs (no changes here) -------------------------
+--   Live:  public.match_letter_for_session_v2(p_session_id uuid)
+--          public.match_letter_for_session_v2_any(p_session_id uuid)
+--          defined in 18_compose_letter.sql.
+--   Dormant: public.match_letter_for_session(...)
+--            public.match_letter_for_session_any(...)
+--            from 12_letter_match_rpc.sql — installed but not
+--            called by /api/letter under the compose-first flow.
 
 -- (3) verification ---------------------------------------------
 --   select column_name, data_type from information_schema.columns
 --    where table_name = 'letter_exchanges'
 --      and column_name in ('reply_text','reply_at');
 --   select proname from pg_proc
---    where proname in ('match_letter_for_session',
---                      'match_letter_for_session_any');
+--    where proname in ('match_letter_for_session_v2',
+--                      'match_letter_for_session_v2_any');

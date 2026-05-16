@@ -2,11 +2,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { getSessionId, getPlayerId } from '@/lib/session'
 
-// Letter-receive phase. Sits on top of finalroom, directly after SealingOverlay.
-// /api/letter matches a seed letter using blank_fill_responses.answer_embedding
-// + primary_defense (mirrored by SealingOverlay's first answer). The mirror is
-// fire-and-forget so the embedding may still be in flight on first mount —
-// 425 is retried a few times with backoff before surfacing as an error.
+// Letter-receive phase. Sits on top of finalroom, directly after
+// LetterComposeOverlay (compose-first flow). /api/letter matches a seed
+// letter using letter_exchanges.composed_letter_embedding via
+// match_letter_for_session_v2; lane (primary_defense) still comes from
+// blank_fill_responses (mirrored by SealingOverlay's first answer).
+// The compose submit is awaited client-side so the embedding should be
+// ready, but a defensive 425 retry remains in case of a slow write.
 // onComplete advances to LetterReplyOverlay (the private response phase).
 
 interface LetterOverlayProps {

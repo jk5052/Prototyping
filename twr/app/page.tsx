@@ -366,26 +366,39 @@ export default function Home() {
   // conversation 진입 시 /subvideo.mp4 가 1회 재생되며 NPC 등장을 establish
   // 한 뒤 onEnded 에서 pause — 마지막 프레임이 그대로 멈춰 있고 그 위로
   // VoidDialogue 가 fade-in. flow: R5 → conversation(LLM) → sealing(3 lines)
-  // → letter → card. 구 blank_fill phase 는 sealing 에 흡수 — SealingOverlay
-  // 가 첫 답변을 /api/blank-fill 로 mirror 하여 downstream embedding 파이프라인 유지.
+  // → letter-compose → letter (receive) → letter-reply → card. compose-first
+  // 라 본인 편지 임베딩으로 매칭됨 (v2 RPC). 구 blank_fill phase 는 sealing 에
+  // 흡수 — SealingOverlay 가 첫 답변을 /api/blank-fill 로 mirror 하여 lane
+  // (primary_defense) 파이프라인을 유지.
   if (phase === 'conversation') {
     return <ConversationScene onComplete={() => setPhase('sealing')} />
   }
 
   // Sealing ritual — finalroom 배경 위에서 LLM 대화 직후 3개 짧은 문장.
   // VoidDialogue 종료 직후 진입. final_reflections 에 prompt_key 별 upsert + 첫 답변은
-  // blank_fill_responses 로 mirror 되어 downstream embedding 파이프라인을 유지.
-  // 완료 시 letter (receive) 단계로 — 매칭된 편지를 먼저 보여준다.
+  // blank_fill_responses 로 mirror 되어 lane(primary_defense) 파이프라인을 유지.
+  // 완료 시 letter-compose 로 — 본인 편지를 먼저 쓰고 그 임베딩으로 매칭한다.
   if (phase === 'sealing') {
     return (
       <FinalSceneShell>
-        <SealingOverlay onComplete={() => setPhase('letter')} />
+        <SealingOverlay onComplete={() => setPhase('letter-compose')} />
+      </FinalSceneShell>
+    )
+  }
+
+  // Letter compose — 3 sealing 답 중 하나를 픽 → memory prompt → 짧은 글 작성
+  // → archive 공개 여부 결정. share=true 면 seed_letters 에 자기 편지가 입수됨.
+  // 완료 시 letter (receive) 로 — composed_letter_embedding 으로 v2 매칭.
+  if (phase === 'letter-compose') {
+    return (
+      <FinalSceneShell>
+        <LetterComposeOverlay onComplete={() => setPhase('letter')} />
       </FinalSceneShell>
     )
   }
 
   // Letter receive — finalroom 배경 위에서 매칭된 편지 1개를 fade-in 으로 보여준다.
-  // /api/letter 가 blank_fill_responses 의 embedding+defense 로 매칭.
+  // /api/letter 가 letter_exchanges.composed_letter_embedding + lane 으로 v2 매칭.
   // 완료 시 letter-reply 로 — 받은 편지에 짧은 사적 답장을 쓴다.
   if (phase === 'letter') {
     return (
@@ -397,21 +410,11 @@ export default function Home() {
 
   // Letter reply — 받은 편지를 컨텍스트로 보여주고 짧은 답장 입력.
   // /api/respond-to-letter 로 reply_text 만 저장. seed_letters 로 가지 않음.
-  // 완료 시 letter-compose 로 — 자기 자신의 편지(미래 풀용)를 쓴다.
+  // 완료 시 card 로.
   if (phase === 'letter-reply') {
     return (
       <FinalSceneShell>
-        <LetterReplyOverlay onComplete={() => setPhase('letter-compose')} />
-      </FinalSceneShell>
-    )
-  }
-
-  // Letter compose — 3 sealing 답 중 하나를 픽 → memory prompt → 짧은 글 작성
-  // → archive 공개 여부 결정. share=true 면 seed_letters 에 자기 편지가 입수됨.
-  if (phase === 'letter-compose') {
-    return (
-      <FinalSceneShell>
-        <LetterComposeOverlay onComplete={() => setPhase('card')} />
+        <LetterReplyOverlay onComplete={() => setPhase('card')} />
       </FinalSceneShell>
     )
   }
