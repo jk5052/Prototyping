@@ -38,7 +38,8 @@ interface PromptRequest {
   session_id:    string
   from_room:     number
   recent_event?: string | null   // 직전 이벤트 텍스트 (트리거)
-  seed_words?:   string[]        // 누적 오라클 단어 — 서버가 그 중 하나 픽
+  seed_words?:   string[]        // legacy — 안 쓰임
+  seed_cards?:   number[]        // 직전에 player 가 고른 readymade card id 들
 }
 
 export async function POST(request: Request) {
@@ -111,10 +112,21 @@ export async function POST(request: Request) {
   ].join('\n')
 
   const anchor = ANCHORS[Math.floor(Math.random() * ANCHORS.length)]
+  // seed_cards: 카드 자체는 추상 이미지 (LLM 이 못 봄) 라 id 를 그대로 넣어도
+  // 의미가 없다. 대신 "방금 N장의 이미지가 player 를 끌어당겼다" 는 사실만
+  // 신호로 전달 — LLM 이 그 끌림을 prompt 의 시작점으로 삼게 한다. anchor 는
+  // 여전히 concrete sensory invitation 의 grounding 역할.
+  const pickedCount = Array.isArray(body.seed_cards) ? body.seed_cards.length : 0
+  const cardLine = pickedCount > 0
+    ? `PICKED: the player just chose ${pickedCount} image${pickedCount === 1 ? '' : 's'} they could not look away from.`
+    : null
   const user = [
     `ANCHOR: ${anchor}`,
+    ...(cardLine ? ['', cardLine] : []),
     '',
-    'Write the journaling prompt now. Two lines. Stay with the anchor.',
+    cardLine
+      ? 'Write the journaling prompt now. Begin from the pull of the image they just chose, then enter the anchor as the concrete sensory ground. Two lines. Do not name the image itself.'
+      : 'Write the journaling prompt now. Two lines. Stay with the anchor.',
   ].join('\n')
 
   // 3) Claude 호출

@@ -31,11 +31,13 @@ interface GameState {
   choices: Choice[]
   tags: Record<Tag, number>
   roomLogs: Record<number, RoomLog>
-  collectedWords: string[]    // 누적 오라클 단어 — choice마다 3개씩 append
+  collectedWords: string[]    // legacy 오라클 단어 — 더 이상 채워지지 않음 (CardToast 로 대체)
+  collectedCards: number[]    // 누적 readymade card id — choice마다 1개 append
 
   setPhase: (phase: GameState['phase']) => void
   addChoice: (choice: Omit<Choice, 'timestamp'>) => void
   addOracleWords: (words: string[]) => void
+  addCard: (id: number) => void
   startRoom: (room: number) => void
   addCancellation: (room: number) => void
   addIdleBout: (room: number, duration_ms: number) => void
@@ -54,6 +56,7 @@ export const useGameStore = create<GameState>((set) => ({
   tags: { AV: 0, EX: 0, CG: 0, SP: 0, AD: 0 },
   roomLogs: {},
   collectedWords: [],
+  collectedCards: [],
 
   setPhase: (phase) => set({ phase }),
 
@@ -68,6 +71,12 @@ export const useGameStore = create<GameState>((set) => ({
   addOracleWords: (words) => set((state) => ({
     collectedWords: [...state.collectedWords, ...words],
   })),
+
+  addCard: (id) => set((state) =>
+    state.collectedCards.includes(id)
+      ? state                                    // 중복 보호 — pickReadymadeCard 가 이미 차단하지만 방어적으로
+      : { collectedCards: [...state.collectedCards, id] }
+  ),
 
   startRoom: (room) => set((state) =>
     state.roomLogs[room]
@@ -100,5 +109,6 @@ export const useGameStore = create<GameState>((set) => ({
     tags: { AV: 0, EX: 0, CG: 0, SP: 0, AD: 0 },
     roomLogs: {},
     collectedWords: [],
+    collectedCards: [],
   }),
 }))

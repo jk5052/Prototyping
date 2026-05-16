@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { getSupabase } from '@/lib/supabase'
 import { getPlayerId, getSessionId } from '@/lib/session'
+import { cardImagePath } from '@/data/readymadeCards'
 
 // model/schema 는 서버 응답을 그대로 반영 — 클라이언트 상수는 fallback.
 const MODEL_VERSION_FALLBACK  = 'claude-sonnet-4-5'
@@ -18,19 +19,19 @@ export interface JournalingOverlayProps {
   fromRoom: number
   toRoom:   number | null   // null이면 마지막 방 종료
   recentEvent: string | null  // 직전 이벤트 텍스트 — prompt seed (트리거)
-  seedWords: string[]         // 누적 오라클 단어 — 서버가 그 중 하나 픽
+  seedCards: number[]         // 누적 readymade card id — pick 단계에서 2-3장 선택
   onComplete: () => void    // submit 또는 skip 후 부모가 phase 전환
 }
 
 type Step = 'pick' | 'loading' | 'writing'
 
 export default function JournalingOverlay({
-  fromRoom, toRoom, recentEvent, seedWords, onComplete,
+  fromRoom, toRoom, recentEvent, seedCards, onComplete,
 }: JournalingOverlayProps) {
-  // 단어가 2개 미만이면 픽 단계 스킵 — 곧장 fetch.
-  const canPick = seedWords.length >= 2
+  // 카드가 2장 미만이면 픽 단계 스킵 — 곧장 fetch.
+  const canPick = seedCards.length >= 2
   const [step, setStep] = useState<Step>(canPick ? 'pick' : 'loading')
-  const [picked,  setPicked]  = useState<string[]>([])
+  const [picked,  setPicked]  = useState<number[]>([])
   const [prompt,   setPrompt]   = useState<string | null>(null)
   const [error,    setError]    = useState<string | null>(null)
   const [response, setResponse] = useState('')
@@ -40,7 +41,7 @@ export default function JournalingOverlay({
   const schemaVerRef = useRef<string>(SCHEMA_VERSION_FALLBACK)
   const fetchedRef  = useRef(false)
 
-  const fetchPrompt = async (words: string[]) => {
+  const fetchPrompt = async (cards: number[]) => {
     if (fetchedRef.current) return
     fetchedRef.current = true
     setStep('loading')
@@ -52,7 +53,9 @@ export default function JournalingOverlay({
           session_id: getSessionId(),
           from_room:  fromRoom,
           recent_event: recentEvent,
-          seed_words:   words,
+          // picked card id 들 — 라우트가 개수만 보고 LLM prompt 의 시작
+          // 신호로 사용한다 (이미지가 끌어당겼다는 사실만 전달).
+          seed_cards:   cards,
         }),
       })
       if (!r.ok) {
@@ -72,15 +75,15 @@ export default function JournalingOverlay({
 
   // pick 단계 스킵 시 자동 fetch (마운트 1회).
   useEffect(() => {
-    if (!canPick) fetchPrompt(seedWords)
+    if (!canPick) fetchPrompt(seedCards)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const togglePick = (w: string) => {
+  const togglePick = (id: number) => {
     setPicked((cur) =>
-      cur.includes(w)
-        ? cur.filter(x => x !== w)
-        : cur.length >= 3 ? cur : [...cur, w],
+      cur.includes(id)
+        ? cur.filter(x => x !== id)
+        : cur.length >= 3 ? cur : [...cur, id],
     )
   }
 
@@ -121,21 +124,27 @@ export default function JournalingOverlay({
         {step === 'pick' && (
           <>
             <p className="text-white/60 text-base leading-relaxed text-center max-w-md">
-              Pick <span className="text-white/90">two or three</span> words that pull at you.
+              Pick <span className="text-white/90">two or three</span> cards that pull at you.
             </p>
-            <div className="flex flex-wrap gap-2 justify-center max-w-2xl">
-              {seedWords.map((w, i) => {
-                const on = picked.includes(w)
+            <div className="flex flex-wrap gap-3 justify-center max-w-3xl">
+              {seedCards.map((id) => {
+                const on = picked.includes(id)
                 return (
                   <button
-                    key={`${w}-${i}`}
-                    onClick={() => togglePick(w)}
-                    className={`text-xs tracking-wider px-3 py-1.5 border transition-all duration-300 ${
+                    key={id}
+                    onClick={() => togglePick(id)}
+                    className={`relative border p-1 transition-all duration-300 ${
                       on
-                        ? 'border-white/70 text-white bg-white/10'
-                        : 'border-white/15 text-white/45 hover:border-white/40 hover:text-white/80'
+                        ? 'border-white/70 bg-white/10 scale-105'
+                        : 'border-white/15 opacity-60 hover:border-white/40 hover:opacity-100'
                     }`}
-                  >{w}</button>
+                  >
+                    <img
+                      src={cardImagePath(id)}
+                      alt=""
+                      className="w-16 h-24 object-cover"
+                    />
+                  </button>
                 )
               })}
             </div>
@@ -171,13 +180,13 @@ export default function JournalingOverlay({
             {picked.length > 0 && (
               <div className="flex flex-wrap gap-2 justify-center max-w-2xl
                 animate-[fadeIn_600ms_ease-out]">
-                {picked.map((w, i) => (
-                  <span key={`${w}-${i}`}
-                    className="text-[10px] tracking-[0.3em] uppercase
-                      px-3 py-1.5 border border-white/30 text-white/80
-                      bg-white/5">
-                    {w}
-                  </span>
+                {picked.map((id) => (
+                  <img
+                    key={id}
+                    src={cardImagePath(id)}
+                    alt=""
+                    className="w-12 h-[4.5rem] object-cover border border-white/30"
+                  />
                 ))}
               </div>
             )}

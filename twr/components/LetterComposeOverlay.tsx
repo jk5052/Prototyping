@@ -35,7 +35,10 @@ interface SealingAnswer {
 }
 
 interface LetterComposeOverlayProps {
-  onComplete: () => void
+  // skip=true → 보낼 답변이 없어 letter-compose 자체가 성립 안 됨.
+  // 부모는 letter receive 도 건너뛰고 다음 단계로 가야 한다 (compose 없이
+  // /api/letter 를 부르면 425 composed letter embedding not ready).
+  onComplete: (opts?: { skip?: boolean }) => void
 }
 
 type Step = 'load' | 'select' | 'write' | 'share' | 'done'
@@ -72,8 +75,9 @@ export default function LetterComposeOverlay({ onComplete }: LetterComposeOverla
         const data = await r.json() as { answers: SealingAnswer[] }
         const rows = (data.answers ?? []).filter((a) => a.answer_text?.trim())
         if (rows.length === 0) {
-          // sealing 을 skip-all 한 케이스 — 선택지가 없으므로 직진.
-          onComplete(); return
+          // sealing 을 skip-all 한 케이스 — 선택지가 없으므로 compose 자체가
+          // 성립 안 됨. skip 신호로 부모가 letter receive 도 건너뛰게 한다.
+          onComplete({ skip: true }); return
         }
         setAnswers(rows)
         setStep('select')

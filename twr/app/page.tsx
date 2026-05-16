@@ -15,12 +15,12 @@ import {
 import { useIdleTracker } from '@/lib/useIdleTracker'
 import { preloadChoicesIndex } from '@/lib/choicesIndex'
 import { logChoice } from '@/lib/narrativeLog'
-import { pickOracleWords } from '@/data/oracleWords'
+import { pickReadymadeCard } from '@/data/readymadeCards'
 import { resetSessionId } from '@/lib/session'
 import Room from '@/components/Room'
 import EventOverlay from '@/components/EventOverlay'
 import RoomIntro from '@/components/RoomIntro'
-import CollectedWordsPanel from '@/components/CollectedWordsPanel'
+import CardToast from '@/components/CardToast'
 import JournalingOverlay from '@/components/JournalingOverlay'
 import VoidDialogue from '@/components/VoidDialogue'
 import LetterOverlay from '@/components/LetterOverlay'
@@ -40,9 +40,12 @@ export default function Home() {
   const choices = useGameStore((s) => s.choices)
   const startRoom = useGameStore((s) => s.startRoom)
   const addCancellation = useGameStore((s) => s.addCancellation)
-  const collectedWords = useGameStore((s) => s.collectedWords)
-  const addOracleWords = useGameStore((s) => s.addOracleWords)
+  const collectedCards = useGameStore((s) => s.collectedCards)
+  const addCard = useGameStore((s) => s.addCard)
   const resetForNewPlay = useGameStore((s) => s.resetForNewPlay)
+
+  // CardToast 트리거 — 카드 한 장 픽업할 때마다 +1 해서 좌측 하단 알림 재생.
+  const [cardToastBump, setCardToastBump] = useState(0)
 
   // chain runner — item chain과 entry chain 모두 처리.
   // entry chain은 itemId = ENTRY_ITEM_ID로 식별.
@@ -273,8 +276,14 @@ export default function Home() {
                 changedMind: meta.changed_mind,
                 hoverSequence: meta.hover_sequence,
               })
-              // choice마다 오라클 단어 3개 누적 — 우상단 패널에 append
-              addOracleWords(pickOracleWords(3))
+              // choice마다 readymade card 한 장 픽업 — 좌측 하단 toast 로 알림.
+              // 풀은 43장. 중복 픽업은 pickReadymadeCard 가 차단하고, 풀이 다 비면
+              // null 을 반환해 더 이상 알림이 안 뜬다.
+              const nextCard = pickReadymadeCard(useGameStore.getState().collectedCards)
+              if (nextCard != null) {
+                addCard(nextCard)
+                setCardToastBump((b) => b + 1)
+              }
               if (ended) {
                 setChain(null)
                 setZoomTarget(null)
@@ -302,14 +311,14 @@ export default function Home() {
           />
         )}
 
-        <CollectedWordsPanel words={collectedWords} freshCount={3} />
+        <CardToast trigger={cardToastBump} />
 
         {journaling && (
           <JournalingOverlay
             fromRoom={journaling.from}
             toRoom={journaling.to}
             recentEvent={currentEvent?.text ?? choices[choices.length - 1]?.event_text ?? null}
-            seedWords={collectedWords}
+            seedCards={collectedCards}
             onComplete={() => {
               setJournaling(null)
               setPhase(nextPhase)
@@ -389,10 +398,12 @@ export default function Home() {
   // Letter compose — 3 sealing 답 중 하나를 픽 → memory prompt → 짧은 글 작성
   // → archive 공개 여부 결정. share=true 면 seed_letters 에 자기 편지가 입수됨.
   // 완료 시 letter (receive) 로 — composed_letter_embedding 으로 v2 매칭.
+  // skip=true (sealing 전부 skip 한 경우) 면 letter/letter-reply 도 건너뛰고
+  // 곧장 card 로 — compose 없이 /api/letter 부르면 425 가 떨어진다.
   if (phase === 'letter-compose') {
     return (
       <FinalSceneShell>
-        <LetterComposeOverlay onComplete={() => setPhase('letter')} />
+        <LetterComposeOverlay onComplete={(opts) => setPhase(opts?.skip ? 'card' : 'letter')} />
       </FinalSceneShell>
     )
   }
