@@ -36,10 +36,19 @@ export default function JournalingOverlay({
   const [error,    setError]    = useState<string | null>(null)
   const [response, setResponse] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  // 타로 덱 펼침 — 마운트 직후 deck(쌓인 상태) → fan(부채꼴) 로 transition.
+  // stagger delay 는 카드별 transitionDelay 로 i*60ms.
+  const [fanned, setFanned] = useState(false)
   const contextNRef = useRef<number>(0)
   const modelVerRef = useRef<string>(MODEL_VERSION_FALLBACK)
   const schemaVerRef = useRef<string>(SCHEMA_VERSION_FALLBACK)
   const fetchedRef  = useRef(false)
+
+  useEffect(() => {
+    if (step !== 'pick') return
+    const t = window.setTimeout(() => setFanned(true), 120)
+    return () => window.clearTimeout(t)
+  }, [step])
 
   const fetchPrompt = async (cards: number[]) => {
     if (fetchedRef.current) return
@@ -123,27 +132,61 @@ export default function JournalingOverlay({
 
         {step === 'pick' && (
           <>
-            <p className="text-white/60 text-base leading-relaxed text-center max-w-md">
+            <p className="text-white/60 text-base leading-relaxed text-center max-w-md font-serif italic">
               Pick <span className="text-white/90">two or three</span> cards that pull at you.
             </p>
-            <div className="flex flex-wrap gap-3 justify-center max-w-3xl">
-              {seedCards.map((id) => {
-                const on = picked.includes(id)
+            {/* 타로 덱 fan. 각 카드는 absolute 로 viewport 중앙 하단을 origin
+                으로 부채꼴 spread. 마운트 시 deck(0,0) → fan 으로 stagger
+                transition. transform-origin: bottom center 라 회전이 카드
+                밑변을 축으로 일어남 (실제 카드를 펼치는 손짓). */}
+            <div className="relative w-screen max-w-[900px] h-[280px] flex items-end justify-center -mx-8 [perspective:1200px]">
+              {seedCards.map((id, i) => {
+                const n = seedCards.length
+                const maxAngle = Math.min(70, 14 + n * 5)
+                const spread   = Math.min(n * 70, 760)
+                const t        = n === 1 ? 0.5 : i / (n - 1)
+                const angle    = (t - 0.5) * maxAngle * 2
+                const tx       = (t - 0.5) * spread
+                const ty       = Math.abs(angle) * 0.9      // 호의 곡률
+                const on       = picked.includes(id)
                 return (
                   <button
                     key={id}
                     onClick={() => togglePick(id)}
-                    className={`relative border p-1 transition-all duration-300 ${
-                      on
-                        ? 'border-white/70 bg-white/10 scale-105'
-                        : 'border-white/15 opacity-60 hover:border-white/40 hover:opacity-100'
-                    }`}
+                    style={{
+                      transform: fanned
+                        ? `translate(${tx}px, ${ty}px) rotate(${angle}deg)`
+                        : `translate(0px, 60px) rotate(0deg) scale(0.92)`,
+                      transitionDelay: fanned ? `${i * 70}ms` : '0ms',
+                      transformOrigin: 'bottom center',
+                      zIndex: on ? 60 : i,
+                    }}
+                    className="group absolute bottom-4 transition-all duration-[1100ms]
+                      ease-[cubic-bezier(0.22,1,0.36,1)]
+                      will-change-transform"
                   >
-                    <img
-                      src={cardImagePath(id)}
-                      alt=""
-                      className="w-16 h-24 object-cover"
-                    />
+                    {/* 안쪽 wrapper — hover/pick 시 fan transform 과 충돌 없이
+                        위로 lift + glow. */}
+                    <div className={`relative transition-all duration-500
+                      ${on
+                        ? '-translate-y-10'
+                        : 'group-hover:-translate-y-5'}`}>
+                      {/* glow halo — picked 일 때만 카드 뒤에서 발광 */}
+                      <div className={`absolute inset-0 rounded-sm transition-opacity duration-700
+                        ${on
+                          ? 'opacity-100 bg-white/10 shadow-[0_0_40px_8px_rgba(255,255,255,0.35),0_0_80px_20px_rgba(200,180,255,0.18)]'
+                          : 'opacity-0'}`} />
+                      <img
+                        src={cardImagePath(id)}
+                        alt=""
+                        draggable={false}
+                        className={`relative w-20 h-28 object-cover
+                          border transition-[border,filter,opacity] duration-500
+                          ${on
+                            ? 'border-white/90 brightness-110'
+                            : 'border-white/25 brightness-90 group-hover:border-white/60 group-hover:brightness-105'}`}
+                      />
+                    </div>
                   </button>
                 )
               })}
