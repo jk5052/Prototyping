@@ -1,6 +1,6 @@
 'use client'
 import Spline from '@splinetool/react-spline'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useGameStore } from '@/stores/gameStore'
 import {
   ITEMS,
@@ -219,6 +219,25 @@ export default function Home() {
           </div>
         )}
 
+        {/* R4 포스터 chain 중 "다른 포스터 보러 가기" 버튼. 방 진입 시 5개를
+            한 번에 식별하기 어려워서, 한 포스터를 줌인 한 뒤에도 다시 방 뷰로
+            돌아갈 수 있어야 함. EventOverlay (z-10) 위로 z-20. 이미 choice 를
+            한 번이라도 한 포스터는 isUsed 로 자연히 lockout. */}
+        {chain && roomNumber === 4 && chain.itemId.startsWith('poster_') && (
+          <button
+            onClick={() => {
+              addCancellation(roomNumber)
+              setChain(null)
+              setZoomTarget(null)
+            }}
+            className="absolute top-4 left-4 z-20 text-white/40 hover:text-white/90
+              text-[10px] tracking-[0.3em] uppercase border border-white/15
+              hover:border-white/40 px-3 py-2 transition-colors duration-500"
+          >
+            ◂ choose another
+          </button>
+        )}
+
         {chain && currentEvent && (
           <EventOverlay
             // event 변경 시 EventOverlay 내부 상태 리셋되도록 key 부여
@@ -271,13 +290,11 @@ export default function Home() {
               } else setChain({ ...chain, index: chain.index + 1 })
             }}
             onCancel={() => {
-              // R4 한정: 포스터/엘리베이터 chain 은 한 번 시작하면 끝까지 진행해야
-              // 다음 방으로 넘어가는 단방향 동선. ESC / 배경 클릭으로 빠져나가지
-              // 못하게 onCancel 무시. (다른 방은 종전대로 cancel 허용.)
-              if (
-                roomNumber === 4 &&
-                (chain.itemId.startsWith('poster_') || chain.itemId === 'modern_apartment_elevator')
-              ) return
+              // R4 엘리베이터만 단방향 동선 유지 — 들어간다 = 떠난다 의미라
+              // ESC / 배경 클릭으로 빠져나갈 수 없게 함. 포스터는 미리보기 후
+              // 다른 포스터를 보고 싶을 수 있어 cancel 허용. 이미 한 choice 라도
+              // 한 포스터는 isUsed lockout 으로 재진입 차단.
+              if (roomNumber === 4 && chain.itemId === 'modern_apartment_elevator') return
               addCancellation(roomNumber)
               setChain(null)
               setZoomTarget(null)
@@ -346,11 +363,11 @@ export default function Home() {
   }
 
   // Void — finalroom 배경 위에서 LLM 대화 (영어, 무명 voice).
-  // conversation 진입 시 subvideo.mp4 가 1회 재생되며 NPC 등장을 establish
-  // 한 뒤 마지막 프레임에서 정지. VoidDialogue 는 video 종료 직후 fade-in.
-  // flow: R5 → conversation(LLM) → sealing(3 lines) → letter → card.
-  // 구 blank_fill phase 는 sealing 에 흡수 — SealingOverlay 가 첫 답변을
-  // /api/blank-fill 로 mirror 하여 downstream embedding 파이프라인 유지.
+  // conversation 진입 시 /subvideo.mp4 가 1회 재생되며 NPC 등장을 establish
+  // 한 뒤 onEnded 에서 pause — 마지막 프레임이 그대로 멈춰 있고 그 위로
+  // VoidDialogue 가 fade-in. flow: R5 → conversation(LLM) → sealing(3 lines)
+  // → letter → card. 구 blank_fill phase 는 sealing 에 흡수 — SealingOverlay
+  // 가 첫 답변을 /api/blank-fill 로 mirror 하여 downstream embedding 파이프라인 유지.
   if (phase === 'conversation') {
     return <ConversationScene onComplete={() => setPhase('sealing')} />
   }
@@ -431,27 +448,37 @@ function FinalSceneShell({ children }: { children: React.ReactNode }) {
   )
 }
 
-// Conversation 진입용 인트로 GIF (/subvideo.gif). GIF 은 <video> 와 달리
-// onEnded / pause() 가 없어 고정 타이머 INTRO_DURATION_MS 후 VoidDialogue 가
-// fade-in. 클릭 시 즉시 스킵. GIF 자체는 introDone 이후에도 DOM 에 남아 배경을
-// 채움 (looping 인지 one-shot 인지는 GIF 인코더가 결정).
-const INTRO_DURATION_MS = 5500
+// Conversation 진입용 인트로 영상 (/subvideo.mp4). 1회 재생 후 onEnded 에서
+// pause() 로 마지막 프레임에 고정 — 채팅(VoidDialogue) 이 그 정지된 프레임 위로
+// fade-in. 클릭 시 영상을 끝 프레임으로 seek + pause 하여 즉시 스킵.
 function ConversationScene({ onComplete }: { onComplete: () => void }) {
   const [introDone, setIntroDone] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
 
-  useEffect(() => {
-    const id = window.setTimeout(() => setIntroDone(true), INTRO_DURATION_MS)
-    return () => window.clearTimeout(id)
-  }, [])
+  function skipToEnd() {
+    if (introDone) return
+    const v = videoRef.current
+    if (v) {
+      try {
+        if (Number.isFinite(v.duration)) v.currentTime = v.duration
+        v.pause()
+      } catch { /* swallow — pause/seek race is fine */ }
+    }
+    setIntroDone(true)
+  }
 
   return (
     <div
       className={`relative w-screen h-screen bg-black overflow-hidden ${introDone ? '' : 'cursor-pointer'}`}
-      onClick={() => { if (!introDone) setIntroDone(true) }}
+      onClick={skipToEnd}
     >
-      <img
-        src="/subvideo.gif"
-        alt=""
+      <video
+        ref={videoRef}
+        src="/subvideo.mp4"
+        autoPlay
+        muted
+        playsInline
+        onEnded={() => { videoRef.current?.pause(); setIntroDone(true) }}
         className="absolute inset-0 w-full h-full object-cover"
       />
       {!introDone && (
