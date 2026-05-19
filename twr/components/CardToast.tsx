@@ -25,7 +25,7 @@ export default function CardToast({ trigger }: CardToastProps) {
     <div className="pointer-events-none absolute bottom-8 left-8 z-30
       text-white/85 text-xs tracking-[0.35em] uppercase
       animate-[fadeIn_300ms_ease-out]">
-      카드 획득 +1
+      card collected +1
     </div>
   )
 }
