@@ -176,18 +176,32 @@ export default function LetterComposeOverlay({ onComplete }: LetterComposeOverla
         )}
 
         {step === 'write' && picked && (
-          <div className="flex flex-col gap-4 animate-[fadeIn_900ms_ease-out]">
-            <p className="text-white/55 text-[11px] tracking-[0.3em] uppercase text-center">
-              write the memory this phrase holds.
-            </p>
-            <p className="text-white/75 text-base font-serif italic text-center
-              [text-shadow:0_1px_4px_rgba(0,0,0,0.85)]">
-              {fillTemplate(tplOf(picked), picked.answer_text)}
-            </p>
-            <p className="text-white/40 text-[10px] leading-relaxed text-center max-w-md mx-auto">
-              a moment, a place, a person. a few lines is enough.
-              <br/>this becomes your letter — for a future stranger.
-            </p>
+          <div className="flex flex-col gap-6 animate-[fadeIn_900ms_ease-out]">
+            {/* 선택한 sealing phrase — select step 의 버튼과 같은 결의 박스로
+                위쪽에 띄워 카드처럼 보이게. 라벨/제목 + 한 호흡 띄운 prompt 가
+                아래로 따라옴. */}
+            <div className="self-center w-full max-w-xl flex flex-col gap-3">
+              <p className="text-white/40 text-[10px] tracking-[0.3em] uppercase text-center">
+                you chose
+              </p>
+              <div className="text-white/90 text-xl md:text-2xl leading-relaxed font-serif italic
+                text-center px-7 py-6 border border-white/30
+                bg-black/55 backdrop-blur-sm
+                [text-shadow:0_1px_6px_rgba(0,0,0,0.9)]">
+                {fillTemplate(tplOf(picked), picked.answer_text)}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 mt-2">
+              <p className="text-white/55 text-[11px] tracking-[0.3em] uppercase text-center">
+                write the memory this phrase holds.
+              </p>
+              <p className="text-white/40 text-[10px] leading-relaxed text-center max-w-md mx-auto">
+                a moment, a place, a person. a few lines is enough.
+                <br/>this becomes your letter — for a future stranger.
+              </p>
+            </div>
+
             <textarea
               value={letter}
               onChange={(e) => setLetter(e.target.value)}
