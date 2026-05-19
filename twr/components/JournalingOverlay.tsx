@@ -139,15 +139,15 @@ export default function JournalingOverlay({
                 으로 부채꼴 spread. 마운트 시 deck(0,0) → fan 으로 stagger
                 transition. transform-origin: bottom center 라 회전이 카드
                 밑변을 축으로 일어남 (실제 카드를 펼치는 손짓). */}
-            <div className="relative w-screen max-w-[900px] h-[280px] flex items-end justify-center -mx-8 [perspective:1200px]">
+            <div className="relative w-screen max-w-[1100px] h-[380px] flex items-end justify-center -mx-8 [perspective:1200px]">
               {seedCards.map((id, i) => {
                 const n = seedCards.length
                 const maxAngle = Math.min(70, 14 + n * 5)
-                const spread   = Math.min(n * 70, 760)
+                const spread   = Math.min(n * 90, 880)
                 const t        = n === 1 ? 0.5 : i / (n - 1)
                 const angle    = (t - 0.5) * maxAngle * 2
                 const tx       = (t - 0.5) * spread
-                const ty       = Math.abs(angle) * 0.9      // 호의 곡률
+                const ty       = Math.abs(angle) * 1.4      // 호의 곡률
                 const on       = picked.includes(id)
                 return (
                   <button
@@ -180,7 +180,7 @@ export default function JournalingOverlay({
                         src={cardImagePath(id)}
                         alt=""
                         draggable={false}
-                        className={`relative w-20 h-28 object-cover
+                        className={`relative w-44 h-64 object-cover
                           border transition-[border,filter,opacity] duration-500
                           ${on
                             ? 'border-white/90 brightness-110'
