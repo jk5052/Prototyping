@@ -221,20 +221,22 @@ export default function JournalingOverlay({
         {step === 'writing' && prompt && (
           <>
             {picked.length > 0 && (
-              <div className="flex flex-wrap gap-2 justify-center max-w-2xl
-                animate-[fadeIn_600ms_ease-out]">
+              <div className="flex flex-wrap gap-4 justify-center max-w-2xl
+                mb-2 animate-[fadeIn_700ms_ease-out]">
                 {picked.map((id) => (
                   <img
                     key={id}
                     src={cardImagePath(id)}
                     alt=""
-                    className="w-12 h-[4.5rem] object-cover border border-white/30"
+                    className="w-32 h-48 md:w-36 md:h-[13.5rem] object-cover
+                      border border-white/40
+                      shadow-[0_8px_28px_-8px_rgba(0,0,0,0.7)]"
                   />
                 ))}
               </div>
             )}
             <p className="text-white/85 text-lg leading-relaxed text-center
-              animate-[fadeIn_600ms_ease-out]">
+              mt-4 animate-[fadeIn_700ms_ease-out]">
               {prompt}
             </p>
             <textarea
