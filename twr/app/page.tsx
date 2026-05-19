@@ -82,6 +82,33 @@ export default function Home() {
     preloadChoicesIndex()
   }, [])
 
+  // 전시 키오스크용 auto-reset — 30분 무입력 시 hard reload 해서 다음 관람객을
+  // 위해 landing 으로 복귀. landing 상태에서는 이미 휴면이라 reload 의미 없음 +
+  // 빈 부스 무한 reload loop 방지 차원에서 카운트다운을 계속 리셋. 10s poll
+  // 로 충분 (30분 단위 정밀도에 비해 오버헤드 무시).
+  useEffect(() => {
+    const IDLE_RESET_MS = 30 * 60 * 1000
+    let lastActivity = Date.now()
+    const bump = () => { lastActivity = Date.now() }
+    const events: Array<keyof WindowEventMap> = [
+      'mousemove', 'pointerdown', 'keydown', 'touchstart', 'wheel',
+    ]
+    events.forEach((e) => window.addEventListener(e, bump, { passive: true }))
+    const tick = window.setInterval(() => {
+      if (useGameStore.getState().phase === 'landing') {
+        lastActivity = Date.now()
+        return
+      }
+      if (Date.now() - lastActivity >= IDLE_RESET_MS) {
+        window.location.reload()
+      }
+    }, 10_000)
+    return () => {
+      window.clearInterval(tick)
+      events.forEach((e) => window.removeEventListener(e, bump))
+    }
+  }, [])
+
   // RoomIntro 종료 콜백 — intro 마킹 + entry chain 자동 시작 (방당 1회).
   const handleIntroComplete = (room: number) => {
     setIntrosShown((prev) => new Set(prev).add(room))
