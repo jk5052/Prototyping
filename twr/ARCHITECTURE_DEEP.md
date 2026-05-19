@@ -32,7 +32,7 @@ A single `Room` component (`twr/components/Room.tsx`) renders all five rooms wit
 | Entry chain | `app/page.tsx:83`–`89` (`handleIntroComplete`) | After `RoomIntro` finishes, `ROOM_ENTRY_EVENTS[room]` (if present) auto-fires as a chain with `itemId = ENTRY_ITEM_ID` (`'__entry__'`). Normalised to `'room_entry'` for the `choices_rag` lookup (`choicesIndex.ts:7`) |
 | Event UI | `EventOverlay.tsx` | Renders 3–4 buttons. Tracks hover dwell, latency, changed-mind flag in `meta` |
 | Choice commit | `app/page.tsx:227`–`272` (`onChoose`) | Two side effects: `addChoice` (Zustand) and `void logChoice` (`lib/narrativeLog.ts:31`). `logChoice` calls `lookupChoice` (`choicesIndex.ts`) to denormalise primary/secondary defense + VAD + axis labels at insert time, then upserts `narrative_logs` with onConflict `(session_id, room, item_id, event_index, choice_index)` (`narrativeLog.ts:75`) |
-| Oracle words | `app/page.tsx:258` | `addOracleWords(pickOracleWords(3))` — see `twr/ORACLE_WORDS.md`. Words go into `gameStore.collectedWords` but are not written to Supabase |
+| Card pickup | `app/page.tsx:282` | `pickReadymadeCard(useGameStore.getState().collectedCards)` — random unowned id from the 43-PNG pool. If non-null: `addCard(id)` + `setCardToastBump(b => b+1)` triggers the bottom-left `카드 획득 +1` toast. State is in-memory (`gameStore.collectedCards`), not persisted to Supabase. The legacy `addOracleWords` / `collectedWords` path is dormant — see `twr/ORACLE_WORDS.md` §8 |
 | Chain advance | `app/page.tsx:259`–`271` | If `choice.endChain` or last event in the chain, clear `chain`; for R4 posters/elevator a sealing exit to room5 fires (`app/page.tsx:265`). Otherwise advance `index` |
 
 The denormalised snapshot in `narrative_logs` is the *only* defense label most of the system reads. `session_analysis` (Opus 4.7) is run lazily later and stored separately; it does not overwrite the per-row labels.
@@ -44,8 +44,9 @@ The denormalised snapshot in `narrative_logs` is the *only* defense label most o
 | Step | File / line | What happens |
 |---|---|---|
 | Trigger | `app/page.tsx:164` (`requestExit`) or door click | If unexplored items remain → `confirmExit` modal first; else `setJournaling({from, to})` |
-| Prompt | `JournalingOverlay.tsx` → `POST /api/journal-prompt` | Server reads recent `narrative_logs` for the session and asks Sonnet 4.5 for a single short prompt. `seed_words` is in the payload but ignored — see `ORACLE_WORDS.md` §6 |
-| Response | `JournalingOverlay.tsx` → `journals` table | The player types or skips with `·`. The row goes into `journals` under RLS (anon publishable + `x-session-id`) |
+| Card pick (optional) | `JournalingOverlay.tsx` tarot fan-out | If `seedCards.length >= 2` the overlay enters a `pick` step: cards mount stacked then fan into an arc via staggered `transitionDelay (i * 70ms)` with `transform-origin: bottom center`. Player picks 2–3 cards (or skips). `picked: number[]` is then posted to `/api/journal-prompt` as `seed_cards` |
+| Prompt | `JournalingOverlay.tsx` → `POST /api/journal-prompt` | Server reads recent `narrative_logs` (count only, metadata) and asks Sonnet 4.5 for a two-line worldbuilding prompt. When `seed_cards.length > 0` the user message prepends `PICKED: the player just chose N images they could not look away from.` so the LLM begins from the pull of the images, then enters the random `ANCHORS` phrase as sensory grounding. Card ids themselves are not sent to the LLM (the abstract images are unreadable to it). Legacy `seed_words` field is accepted but ignored — see `ORACLE_WORDS.md` |
+| Response | `JournalingOverlay.tsx` → `journals` table | Picked cards re-appear as small thumbnails above the prompt. The player types or skips with `·`. The row goes into `journals` under RLS (anon publishable + `x-session-id`) |
 | Advance | `app/page.tsx:298` (`setPhase(nextPhase)`) | `nextPhase` is `roomN+1` for N<5, else `conversation` (`app/page.tsx:151`) |
 
 Journals are unlabelled at insert; aggregation happens at `session_analysis` generation time.
@@ -58,7 +59,7 @@ After R5's journaling completes, `phase = 'conversation'`. This is the first end
 
 | Step | File / line | What happens |
 |---|---|---|
-| Scene mount | `app/page.tsx:354` → `ConversationScene` (`app/page.tsx:439`) | Inlined component, not a separate file. Plays `/subvideo.gif` for `INTRO_DURATION_MS=5500` (`app/page.tsx:438`) then fades in `VoidDialogue` |
+| Scene mount | `app/page.tsx:374` → `ConversationScene` (`app/page.tsx:468`) | Inlined component, not a separate file. Plays `/subvideo.mp4` (~5s, one-shot). `onEnded` calls `videoRef.current.pause()` so the video freezes on its last frame, then `setIntroDone(true)` fades in `VoidDialogue` over the still NPC. Click anywhere during playback seeks `currentTime = duration` + pauses for the same final-frame state |
 | First turn | `VoidDialogue.tsx` → `POST /api/conversation` | Server runs `getOrCreateSessionAnalysis` (`lib/sessionAnalysis.ts`) on first call — Opus 4.7 reads all `narrative_logs` + `journals` for the session and emits a structured profile (`primary_defense`, secondary, etc.) into `session_analysis`. This single deep read is the only Opus 4.7 call in the whole game |
 | Film stem | `app/api/conversation/route.ts` | Picks a film-stimulus stem keyed on `primary_defense` and passes it as the opening NPC turn |
 | 6 turns | client loop | Up to 6 player turns. Free text is sanitized through `anthropicSanitize.ts:stripLoneSurrogates` before being included in the Anthropic body (`buildAnthropicBody`) — this is the patch for orphan UTF-16 halves triggering Anthropic 502s |

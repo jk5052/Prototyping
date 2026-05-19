@@ -16,8 +16,8 @@ The thesis tension the system holds: **AI quantification of inner life vs. the u
 | Runtime | React 19.2 |
 | 3D scene (rooms 1–5) | React Three Fiber 9 + drei 10 (`OrbitControls`, `Environment`, GLB models per room) on `three` 0.183 |
 | 3D scene (landing) | `@splinetool/react-spline` 4 — Spline runtime renderer |
-| Finalroom backdrop | HTML5 `<video>` (`/subvideo.gif` intro freeze frame; previously Spline runtime / GLB) — Spline runtime was tried and dropped for stability |
-| State | Zustand 5 (`twr/stores/gameStore.ts`) — phase, choices, oracle words, room logs |
+| Finalroom backdrop | HTML5 `<video>` looping `/finalroom.mp4`; conversation intro is a separate one-shot `/subvideo.mp4` that pauses on its last frame via `onEnded`. Previous attempts: Spline runtime, GLB — both dropped for stability |
+| State | Zustand 5 (`twr/stores/gameStore.ts`) — phase, choices, collected card ids, room logs (oracle-word slot is retained as legacy and no longer written) |
 | Styling | Tailwind v4 (utility-only, custom fonts: Instrument Serif + Zodiak) |
 | Backend | Next.js Route Handlers (`twr/app/api/*`) — single Vercel deploy |
 | Database | Supabase Postgres + `pgvector` (HNSW, `halfvec(3072)`) |
@@ -109,7 +109,7 @@ Every RAG table uses the same embedding contract: `text-embedding-3-large @ 3072
 | `journals` | `09` | up to 5 | Free-text journal between rooms (also includes the post-room-5 entry) |
 | `blank_fill_responses` | `10` | exactly 1 | Player's blank answer + 3072d embedding + aggregated `primary_defense` |
 | `final_reflections` | `17` | up to 3 | Sealing-ritual answers, one row per `(session_id, template_id)` from the shared `blank_fill_templates` pool |
-| `letter_exchanges` | `10` + `18` + `19` | exactly 1 | Carries every letter-phase artifact for the session: `received_letter_id` (pinned match), `reply_text` + `reply_at` (private reply), `composed_letter` + `composed_letter_embedding halfvec(3072)` + `selected_template_id` + `selected_answer` + `composed_at`, and `share_choice` |
+| `letter_exchanges` | `10` + `18` + `19` | exactly 1 | Carries every letter-phase artifact for the session: `received_letter_id` (pinned match — the seed letter player **received**), `reply_text` + `reply_at` (private reply), `composed_letter` + `composed_letter_embedding halfvec(3072)` + `selected_template_id` + `selected_answer` + `composed_at`, `share_choice`, and `reply_letter_id` (despite the name, this now points at the **composed** letter's id in `seed_letters` when `share_choice=true` — see §16 known debt) |
 | `seed_letters` | `10` + `13` + `18` | 0-1 (only on share) | If player opted to share their **composed** letter, it's ingested back as `source='player'`. The `blank_answer_embedding` column carries the composed-letter embedding for `source='player'` rows (column name kept for RPC compatibility) |
 | `letter_replies` | `13` | 0-N | External replies from QR-shared letter readers (cross-session) |
 | `generated_cards` | `10` + `13` + `14` | exactly 1 | Talisman card row: image URL, prompt used, picked words (mood phrases), snapshotted poem (`card_poem`, `card_poem_title`, `card_poem_author`), QR URL |
@@ -157,7 +157,7 @@ What gets embedded:
 | `blank_fill_responses.answer_embedding` | the player's first sealing answer (mirrored from `SealingOverlay` via `/api/blank-fill`) | unused for matching since v2 flip; `primary_defense` derived from this row still drives lane filtering |
 | `letter_exchanges.composed_letter_embedding` | the player's composed letter body (3072d halfvec) | **current matching key** via `match_letter_for_session_v2` |
 
-**Dual-embedding asymmetry (open issue).** The v2 RPC compares the player's composed letter (~200-600 chars) against `seed_letters.blank_answer_embedding`. For `source='player'` rows that column holds the composed letter body — symmetric long↔long matching. For `source='seed'` rows (the 37 hand-written letters in `dataset/processed/seed_letters.json`, loaded via `13_embed_upload_seed_letters.py`) the column still holds the embedding of the **short blank_answer phrase** (~5 words). The pool is therefore mixed, and until the seed rows are re-embedded against `letter_text`, cross-source matches lean on whatever signal survives the length asymmetry. A backfill that re-embeds `letter_text` into the same column for `source='seed'` is the cleanest fix and is low-cost (37 rows × `text-embedding-3-large`).
+**Dual-embedding asymmetry (open issue).** The v2 RPC compares the player's composed letter (~200-600 chars) against `seed_letters.blank_answer_embedding`. For `source='player'` rows that column holds the composed letter body — symmetric long↔long matching. For `source='seed'` rows (the 67 hand-written letters in `dataset/processed/seed_letters.json`, loaded via `13_embed_upload_seed_letters.py`) the column still holds the embedding of the **short blank_answer phrase** (~5 words). The pool is therefore mixed, and until the seed rows are re-embedded against `letter_text`, cross-source matches lean on whatever signal survives the length asymmetry. A backfill that re-embeds `letter_text` into the same column for `source='seed'` is the cleanest fix and is low-cost (67 rows × `text-embedding-3-large`).
 
 ## 5. Defense classification system
 
@@ -205,7 +205,7 @@ All under `twr/app/api/*`. Single Vercel deploy, no separate backend. The `choic
 
 | Route | Method | Caller | Responsibility |
 |---|---|---|---|
-| `/api/journal-prompt` | POST | inter-room transition | Sonnet 4.5 reads recent `narrative_logs` and emits a personalised journal prompt. Accepts `seed_words` but currently ignores them (see `twr/ORACLE_WORDS.md`) |
+| `/api/journal-prompt` | POST | inter-room transition | Sonnet 4.5 emits a two-line worldbuilding prompt anchored on a hardcoded `ANCHORS` phrase. When `seed_cards` is non-empty the user message prepends a `PICKED: the player just chose N images they could not look away from` line so the LLM begins from the pull of the picked images, then enters the anchor as sensory grounding. `narrative_logs` are counted (metadata) but not fed to the LLM. Legacy `seed_words` field is accepted but ignored (see `twr/ORACLE_WORDS.md`) |
 | `/api/journal-label` | POST | end of game / lazy | Opus 4.7 reads the full session and writes/updates `session_analysis` |
 | `/api/conversation` | POST | conversation phase | Sonnet 4.5 dialogue conditioned on `session_analysis.primary_defense` and a film-stimulus stem; up to 6 turns. Server uses `getOrCreateSessionAnalysis` to lazily compute the profile on first call |
 | `/api/sealing-prompts` | GET | sealing phase | Deterministic 3-pick from `blank_fill_templates` (`hashSeed(session_id+':a'/':b'/':c') % pool` with walk-forward distinctness) |
@@ -272,11 +272,11 @@ After receiving, the player writes a short reply through `LetterReplyOverlay` �
 
 ### 8.4 Seed pool and self-extension
 
-- `twr/dataset/processed/seed_letters.json` — currently 37 hand-written letters.
-- Backup of fuller original set: `seed_letters.full84.bak.json` (84 rows).
-- Each letter has: `primary_defense`, `author_pseudonym`, `blank_template_id`, `blank_answer`, `letter_text`. The current `13_embed_upload_seed_letters.py` script embeds `blank_answer` into `blank_answer_embedding`.
-- Defense coverage is uneven across 28 lanes — many lanes contain a single letter, so the unfiltered fallback is exercised regularly.
-- **v2 caveat**: seed rows are short-phrase-embedded while player rows are full-body-embedded (see §4 dual-embedding asymmetry). Re-embedding `letter_text` for the 37 seeds into the same column is the recommended backfill before v2 ships to playtest.
+- `twr/dataset/processed/seed_letters.json` — currently 67 hand-written letters (37 original + 30 added in the 591d9b9 backfill to cover 13 underrepresented defenses with 2–3 metaphorical, "I am here"-tone letters each).
+- Backup of fuller original set: `seed_letters.full84.bak.json` (84 rows). Pre-backfill snapshot: `seed_letters.before_30.bak.json`.
+- Each letter has: `primary_defense`, `author_pseudonym`, `blank_template_id`, `blank_answer`, `letter_text`. The current `13_embed_upload_seed_letters.py` script embeds `blank_answer` into `blank_answer_embedding` and dedups on `(primary_defense, blank_answer)` so re-runs are safe.
+- Defense coverage is more even after the backfill but still thinner on a handful of lanes — the unfiltered `_any` fallback still fires.
+- **v2 caveat**: seed rows are short-phrase-embedded while player rows are full-body-embedded (see §4 dual-embedding asymmetry). Re-embedding `letter_text` for the 67 seeds into the same column is the recommended backfill before v2 ships to wider playtest.
 
 `share_player_letter(session_id)` RPC (migration `18`, rewritten from `13`) ingests the player's **composed** letter as a new `seed_letters` row with `source='player'`. The composed letter's embedding lands in `blank_answer_embedding` (name preserved for RPC compatibility) and `letter_text` carries the composed text. The pool grows as a function of opt-in archives.
 
@@ -477,8 +477,9 @@ twr/
 │   ├── Room.tsx                        (R3F scene per GLB; glow registry)
 │   ├── RoomIntro.tsx                   (per-room title fade-in)
 │   ├── EventOverlay.tsx                (object-click choice picker)
-│   ├── JournalingOverlay.tsx           (inter-room free-text)
-│   ├── CollectedWordsPanel.tsx         (oracle word ribbon)
+│   ├── JournalingOverlay.tsx           (inter-room free-text + tarot-deck card fan-out)
+│   ├── CardToast.tsx                   (bottom-left "+1 card" pickup notification)
+│   ├── CollectedWordsPanel.tsx         (legacy oracle word ribbon — not mounted)
 │   ├── VoidDialogue.tsx                (6-turn conversation UI)
 │   ├── SealingOverlay.tsx              (3-line departure ritual)
 │   ├── LetterOverlay.tsx               (receive)
@@ -495,12 +496,14 @@ twr/
 ├── data/
 │   ├── events.ts                       (ROOM_ENTRY_EVENTS, ITEMS, ROOM_MODELS, FINAL_SCENE_VIDEO)
 │   ├── _tagging_vocab.ts               (vocab@1.0)
-│   ├── oracleWordPool.ts               (80 phrases × 8 categories — see ORACLE_WORDS.md)
+│   ├── readymadeCards.ts               (43-id pool + pickReadymadeCard — see ORACLE_WORDS.md)
+│   ├── oracleWords.ts                  (legacy 80-phrase pool, retained for re-entry)
 │   └── defense_positive_framing.json   (28-defense → framing_en + image_seed)
 ├── dataset/
 │   ├── processed/
 │   │   ├── defense_codebook.json       (28 entries)
-│   │   ├── seed_letters.json           (37 letters)
+│   │   ├── seed_letters.json           (67 letters: 37 original + 30 backfill)
+│   │   ├── seed_letters.before_30.bak.json
 │   │   └── seed_letters.full84.bak.json
 │   ├── scripts/
 │   │   ├── build_defense_codebook.py
@@ -536,11 +539,12 @@ twr/
 │   ├── useIdleTracker.ts               (idle detection hook)
 │   └── supabase.ts                     (client w/ x-session-id header)
 ├── stores/
-│   └── gameStore.ts                    (Zustand: phase, choices, oracle words)
+│   └── gameStore.ts                    (Zustand: phase, choices, collectedCards, room logs; collectedWords retained as legacy)
 ├── public/
 │   ├── models/                         (r1.glb … r5.glb)
+│   ├── models/readymade_cards/         (43 PNGs — in-game pickup + tarot fan-out)
 │   ├── assets/                         (R4 poster hi-res PNGs)
-│   └── subvideo.gif                    (conversation intro)
+│   └── subvideo.mp4                    (conversation intro — one-shot, pauses on last frame)
 ├── TECH_OVERVIEW.md                    (this file)
 ├── CARD_GENERATION.md                  (talisman pipeline deep dive)
 ├── ORACLE_WORDS.md                     (in-game word-fragment system)
@@ -551,13 +555,14 @@ twr/
 ### Companion documents
 
 - **`twr/CARD_GENERATION.md`** — full talisman generation pipeline: `extractMoodWords` → `generate-card` (Flux) → `find-poems` → QR → `@react-pdf/renderer`. Includes the Gorey-style prompt block order and idempotency semantics.
-- **`twr/ORACLE_WORDS.md`** — in-game word fragments collected from `EventOverlay` choices and surfaced in the journaling overlay. Documents the current behaviour where `/api/journal-prompt` accepts but ignores `seed_words`.
+- **`twr/ORACLE_WORDS.md`** — in-game **card pickups** collected from each `EventOverlay` choice (`CardToast` bottom-left notification) and surfaced as a tarot-deck fan-out in `JournalingOverlay`. Documents the readymade card pool, the `seed_cards` signal used by `/api/journal-prompt` (count-only PICKED line, not card ids), and the legacy oracle-word phrase system it replaced.
 - **`twr/ARCHITECTURE_DEEP.md`** — code walkthrough with file:line references for one full playthrough (landing → R1 mount → choice → narrative_logs INSERT → … → card PDF). Targeted at developer onboarding / re-entry.
 
 ## 16. Open notes for the paper
 
 - **Defense lane sparsity**: the seed letter pool covers some lanes thinly; the `_any` fallback fires often. A larger curated pool or LLM-augmented seed would reduce this, at the cost of provenance.
 - **Cross-lingual embedding**: `text-embedding-3-large` handles KO/EN in one space, but same-language matches are systematically closer. Currently uncontrolled.
-- **Seed pool dual-embedding asymmetry**: with v2 live, `seed_letters.blank_answer_embedding` is the embedding of the short `blank_answer` phrase for `source='seed'` rows but the long composed-letter body for `source='player'` rows. The matching space is therefore mixed in length/style. The 37 seed letters should be re-embedded against `letter_text` for symmetry — low-cost backfill, no schema change.
+- **Seed pool dual-embedding asymmetry**: with v2 live, `seed_letters.blank_answer_embedding` is the embedding of the short `blank_answer` phrase for `source='seed'` rows but the long composed-letter body for `source='player'` rows. The matching space is therefore mixed in length/style. The 67 seed letters should be re-embedded against `letter_text` for symmetry — low-cost backfill, no schema change.
+- **`letter_exchanges.reply_letter_id` is mis-named under compose-first**: the column was introduced in migration `13` to pin the seed-letter id created when a player chose to publicise their reply. Migration `18` rewrote `share_player_letter` to ingest the **composed** letter instead (the reply stayed private and now lives in `reply_text` + `reply_at`), but the column name was kept for RPC/code back-compat. So today `reply_letter_id` actually means "id of the shared composed letter in `seed_letters`". A rename to `shared_letter_id` (+ corresponding `share_player_letter` RPC and `/api/share-letter` / `/api/card-bundle` reads) would remove the cognitive overlap with `received_letter_id` (the matched seed letter the player *receives*); both columns are seed-letter foreign keys on the same row and the names actively mislead. Low-risk migration but touches the QR code path and `card-bundle.shared` boolean.
 - **No auth**: per-session isolation via header, not identity. Adequate for the artifact's threat model (a one-session journaling experience), inadequate for any persistent account model.
 - **Opus 4.7 for analysis only**: the cost-bearing single deep read is centralised; everything else (conversation, prompts) runs on Sonnet 4.5.

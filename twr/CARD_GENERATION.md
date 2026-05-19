@@ -12,9 +12,9 @@
 ## 1. 전체 흐름
 
 ```
-sealing → letter → letter-reply → letter-compose → letter-share → card
-                                                                   │
-                                                                   ▼
+sealing → letter-compose (+ share?) → letter (receive) → letter-reply → card
+                                                                         │
+                                                                         ▼
                                                 CardOverlay
                                                    │ POST
                                                    ▼
@@ -32,6 +32,8 @@ sealing → letter → letter-reply → letter-compose → letter-share → card
                                                    ▼
                                               TalismanPDF (A6 ×2)
 ```
+
+엔드게임은 **compose-first** 로 흐릅니다 — sealing 직후 player 가 자기 편지를 먼저 쓰고 (`letter-compose`, 이때 `composed_letter_embedding` 이 만들어짐), 그 임베딩을 키로 `match_letter_for_session_v2` 가 같은 lane 안에서 가장 가까운 seed letter 를 골라 보여주고 (`letter`), player 가 사적인 답장을 쓴 뒤 (`letter-reply`) `card` 로 진입. share 결정은 `letter-compose` 단계 안에서 같이 처리.
 
 `card-bundle` 은 **멱등**합니다. 동일 `session_id` 로 여러 번 호출되어도 첫 호출에서만 Flux/시 매칭이 실행되고, 이후엔 `generated_cards` 행을 그대로 반환합니다.
 
@@ -63,7 +65,7 @@ Anthropic **Claude Sonnet 4.5** 를 `tool_use` 모드로 호출. system prompt �
 1. Flux 프롬프트의 `atmospheric anchors` 라인으로 들어가 이미지 무드를 결정
 2. `generated_cards.picked_words` 컬럼에 그대로 저장 → PDF page 1 하단에 verbatim 노출
 
-> 참고: `data/oracleWords.ts` 의 `pickOracleWords()` 는 **별개**의 시스템입니다. 방 안에서 choice 직후 잠깐 띄우는 evocative phrase 풀 (LLM 호출 없음, 랜덤 픽) — 우상단 `CollectedWordsPanel` 에만 사용되고 talisman 에는 들어가지 않습니다.
+> 참고: 방 안에서 choice 마다 줍는 **readymade card** 픽업은 **별개**의 시스템입니다 — `data/readymadeCards.ts` 의 `pickReadymadeCard()` 가 PNG 풀에서 한 장씩 골라 `gameStore.collectedCards` 에 누적, 방-사이 `JournalingOverlay` 의 타로 fan-out 에서 골라잡힘 (자세한 건 `ORACLE_WORDS.md` 참고). 카드 id 와 카드 이미지 자체는 `card-bundle` 페이로드에 들어가지 않아 talisman 으로 직접 전달되지 않습니다. 단, 카드 자극을 받아 player 가 쓴 `journals.response` 텍스트는 mood extraction 의 raw 입력으로 흘러들어가는 간접 경로는 있음.
 
 ## 4. 이미지 생성 — `api/generate-card`
 
@@ -100,7 +102,9 @@ Anthropic **Claude Sonnet 4.5** 를 `tool_use` 모드로 호출. system prompt �
 
 ## 6. QR code
 
-`letter_exchanges.reply_letter_id` 가 있으면 (= player 가 letter-share 단계에서 자신의 답장을 공개했으면) `${origin}/letter/${reply_letter_id}` 를 `qrcode` 라이브러리로 PNG data URL 생성 → `generated_cards.qr_url` + `qr_data_url` 저장. 공유 안 한 경우 QR 영역은 비고 PDF page 2 의 footer 가 `the white room` 만 표시.
+`letter_exchanges.reply_letter_id` 가 비어있지 않으면 (= player 가 `letter-compose` 단계에서 share=true 를 선택해 자신의 **composed** 편지가 `seed_letters` 에 `source='player'` 로 등록됐으면) `${origin}/letter/${reply_letter_id}` 를 `qrcode` 라이브러리로 PNG data URL 생성 → `generated_cards.qr_url` + `qr_data_url` 저장. 공유 안 한 경우 QR 영역은 비고 PDF page 2 의 footer 가 `the white room` 만 표시.
+
+> 컬럼명 주의: `reply_letter_id` 는 mig. `13` 시절 "공유된 reply" 를 가리키도록 도입됐지만 mig. `18` 의 compose-first flip 이후로는 **공유된 composed 편지의 id** 를 담습니다. 이름은 back-compat 으로 유지된 채. 같은 행의 `received_letter_id` (player 가 받은 seed 편지) 와 의미가 겹치게 보이지만 두 컬럼은 별개입니다 — 자세한 부채 메모는 `TECH_OVERVIEW.md` §16 참고.
 
 ## 7. PDF 조립 — `TalismanPDF.tsx`
 
@@ -127,7 +131,9 @@ A6 portrait (105×148mm) **2 페이지**, 모두 cream paper `#f4ede1` 배경 + 
 
 ## 9. Readymade cards (`public/models/readymade_cards/`)
 
-**코드 경로에서 참조되지 않습니다.** 전시/프린트 백업용 정적 에셋입니다. Flux 실패 시 자동 fallback 으로 빠지지는 않습니다 — 그 경우 `card-bundle` 이 502 를 던지고 `CardOverlay` 가 `failed: …` 에러를 표시합니다. 자동 fallback 이 필요해지면 `generate-card` 의 `pred.status !== 'succeeded'` 분기에서 랜덤 picked file 로 대체하는 패치가 들어가야 합니다.
+talisman 파이프라인에서는 **참조되지 않습니다.** Flux 실패 시 자동 fallback 으로 빠지지도 않음 — 그 경우 `card-bundle` 이 502 를 던지고 `CardOverlay` 가 `failed: …` 에러를 표시. 자동 fallback 이 필요해지면 `generate-card` 의 `pred.status !== 'succeeded'` 분기에서 랜덤 picked file 로 대체하는 패치가 들어가야 합니다.
+
+다만 **같은 폴더는 in-game 카드 픽업 시스템**의 자산 소스로 활발히 쓰입니다 — 방 안에서 choice 마다 한 장씩 줍고 (`CardToast`), 방-사이 `JournalingOverlay` 의 타로 fan-out 에서 골라잡는 그 카드들이 이 PNG 들. 두 경로 (talisman / in-game) 가 한 폴더를 공유하지만 의미적으로는 분리되어 있고, 자세한 건 `ORACLE_WORDS.md`.
 
 ## 10. 손볼 만한 곳
 
