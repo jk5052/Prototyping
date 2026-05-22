@@ -435,6 +435,7 @@ There is no auth: the threat model is *correlation prevention between sessions o
 | QR images | Generated on demand server-side; embedded inline in PDF as base64, never stored |
 | Environment | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `REPLICATE_API_TOKEN`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_BASE_URL` |
 | Build conventions | See `twr/AGENTS.md` — Next.js 16 has breaking changes; route handlers, params, and dynamic routes follow new conventions |
+| Kiosk auto-reset | `app/page.tsx` runs a 10 s-poll effect once the app is past `landing`. Any pointer / key / touch / wheel / mouse event resets a counter; after 30 min idle it calls `window.location.reload()` to hard-reset Three.js scenes, video timers, and in-memory session for the next visitor. `landing` is exempt to avoid an empty-booth reload loop. Independent of `lib/useIdleTracker.ts` (which gates overlay reveal animations) |
 
 ## 14. Thesis reconciliation
 
