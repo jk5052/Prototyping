@@ -221,18 +221,52 @@ export default function JournalingOverlay({
         {step === 'writing' && prompt && (
           <>
             {picked.length > 0 && (
-              <div className="flex flex-wrap gap-4 justify-center max-w-2xl
-                mb-2 animate-[fadeIn_700ms_ease-out]">
-                {picked.map((id) => (
-                  <img
-                    key={id}
-                    src={cardImagePath(id)}
-                    alt=""
-                    className="w-32 h-48 md:w-36 md:h-[13.5rem] object-cover
-                      border border-white/40
-                      shadow-[0_8px_28px_-8px_rgba(0,0,0,0.7)]"
-                  />
-                ))}
+              // 가벼운 부채꼴(fan). pick step 의 큰 spread 와 달리 여기선 약하게 —
+              // 카드는 보조 시각자료이지 메인 액션이 아니라서. absolute + relative
+              // 컨테이너로 깔고, transform-origin: bottom center 라 회전축이 카드
+              // 아래쪽. translateY(-|angle|*k) 으로 호의 곡률.
+              <div className="relative w-full max-w-[640px] h-[340px]
+                flex items-end justify-center mb-4
+                animate-[fadeIn_900ms_ease-out]">
+                {picked.map((id, i) => {
+                  const n        = picked.length
+                  const t        = n === 1 ? 0.5 : i / (n - 1)
+                  const maxAngle = n === 1 ? 0 : 12          // 전체 spread ±12°
+                  const angle    = (t - 0.5) * maxAngle * 2
+                  const tx       = (t - 0.5) * (n * 100)     // 좌우 fan offset
+                  const ty       = Math.abs(angle) * 1.2     // 호의 곡률 위쪽으로
+                  const dur      = 4200 + i * 700            // 비동기 drift
+                  const delay    = i * 380
+                  return (
+                    // Wrapper 가 fan 위치 (absolute + translateX(-50%) 로 카드의
+                    // 가로 중앙 정렬). 내부 img 는 cardFloat 으로 drift — transform
+                    // 충돌 (utility -translate-x-1/2 가 keyframe transform 에
+                    // 덮어쓰이는 문제) 을 두 노드로 분리해서 회피.
+                    <div
+                      key={id}
+                      style={{
+                        left:   `calc(50% + ${tx}px)`,
+                        bottom: `${ty}px`,
+                        zIndex: i,
+                      }}
+                      className="absolute -translate-x-1/2"
+                    >
+                      <img
+                        src={cardImagePath(id)}
+                        alt=""
+                        style={{
+                          ['--tilt' as string]: `${angle}deg`,
+                          transformOrigin: 'bottom center',
+                          animation: `cardFloat ${dur}ms ease-in-out ${delay}ms infinite`,
+                        }}
+                        className="w-40 h-60 md:w-48 md:h-72 object-cover
+                          border border-white/40
+                          shadow-[0_14px_40px_-10px_rgba(0,0,0,0.75)]
+                          will-change-transform"
+                      />
+                    </div>
+                  )
+                })}
               </div>
             )}
             <p className="text-white/85 text-lg leading-relaxed text-center
